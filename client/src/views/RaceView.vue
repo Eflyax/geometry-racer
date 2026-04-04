@@ -42,7 +42,7 @@
 		</div>
 
 		<div
-			v-if="store.config.devMode && store.isHost"
+			v-if="store.config.devMode && store.isHost && isDevPlayer"
 			class="dev-panel"
 			@mousedown.stop
 			@mouseup.stop
@@ -82,6 +82,10 @@ import TrackSvg from '@/components/TrackSvg.vue';
 
 const store = useGameStore();
 const router = useRouter();
+
+const isDevPlayer = computed(() => {
+	return store.myPlayer?.name === import.meta.env.VITE_DEVELOPER_NAME;
+});
 
 watch(() => store.phase, (p) => {
 	if (p === 'lobby') {

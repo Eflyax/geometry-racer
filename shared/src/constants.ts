@@ -10,4 +10,3 @@ export const ROOM_CODE_LENGTH = 4;
 export const ROOM_EXPIRY_MS = 30 * 60 * 1000;
 export const CAR_WIDTH = 40;
 export const CAR_HEIGHT = 20;
-export const SERVER_PORT = 3000;

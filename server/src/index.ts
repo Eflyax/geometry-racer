@@ -1,9 +1,10 @@
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
-import { SERVER_PORT } from 'animal-racer-shared';
 import type { ClientMessage, ServerMessage } from 'animal-racer-shared';
 import { RoomManager } from './RoomManager.js';
+
+const SERVER_PORT = Number(process.env.SERVER_PORT) || 3000;
 
 const server = createServer((req, res) => {
 	res.setHeader('Access-Control-Allow-Origin', '*');

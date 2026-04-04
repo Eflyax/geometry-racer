@@ -10,7 +10,6 @@ import type {
 	RoomState,
 	Track,
 } from 'animal-racer-shared';
-import { SERVER_PORT } from 'animal-racer-shared';
 import type { ServerMessage } from 'animal-racer-shared';
 import { Connection } from '@/ws/Connection';
 
@@ -44,8 +43,12 @@ export const useGameStore = defineStore('game', () => {
 	const myCar = computed(() => cars.value.find((c) => c.playerId === myPlayerId.value));
 
 	function getWsUrl(): string {
-		const host = window.location.hostname || 'localhost';
-		return `ws://${host}:${SERVER_PORT}`;
+		if (import.meta.env.VITE_WS_URL) {
+			return import.meta.env.VITE_WS_URL;
+		}
+		const host = import.meta.env.VITE_SERVER_HOST || 'localhost';
+		const port = import.meta.env.VITE_SERVER_PORT || '3000';
+		return `ws://${host}:${port}`;
 	}
 
 	async function connect(): Promise<void> {

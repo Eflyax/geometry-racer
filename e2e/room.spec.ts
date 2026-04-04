@@ -80,12 +80,14 @@ test('back to lobby after race', async ({ browser }) => {
 test('dev mode: single player, race, restart', async ({ page }) => {
 	// Create room
 	await page.goto('/');
-	await page.fill('input[placeholder="Tvoje jméno"]', 'Dev');
+	await page.fill('input[placeholder="Tvoje jméno"]', import.meta.env.VITE_DEVELOPER_NAME);
 	await page.click('button:has-text("Vytvořit místnost")');
 	await expect(page.locator('.code')).toBeVisible({ timeout: 5000 });
 
-	// Enable dev mode
-	await page.click('input[type="checkbox"]');
+	// Enable dev mode (checkbox only visible for "Eflyax")
+	const devCheckbox = page.locator('.checkbox-label input[type="checkbox"]');
+	await expect(devCheckbox).toBeVisible({ timeout: 3000 });
+	await devCheckbox.click();
 
 	// Start should be enabled with 1 player
 	const startBtn = page.locator('button:has-text("Start")');

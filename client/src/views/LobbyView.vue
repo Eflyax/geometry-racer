@@ -63,7 +63,7 @@
 				<input type="range" min="1" max="10" step="1" :value="store.config.laps"
 					@input="updateLaps(Number(($event.target as HTMLInputElement).value))" />
 			</label>
-			<label class="checkbox-label">
+			<label v-if="isDevPlayer" class="checkbox-label">
 				<input type="checkbox" :checked="store.config.devMode"
 					@change="store.updateConfig({ devMode: ($event.target as HTMLInputElement).checked })" />
 				Developer
@@ -103,6 +103,10 @@ const startTooltip = computed(() => {
 		return `Potřeba ještě ${need} ${need === 1 ? 'hráče' : 'hráčů'} (min. ${minPlayers})`;
 	}
 	return '';
+});
+
+const isDevPlayer = computed(() => {
+	return store.myPlayer?.name === import.meta.env.VITE_DEVELOPER_NAME;
 });
 
 function isColorTaken(color: string): boolean {
