@@ -45,6 +45,8 @@ function confirm(): void {
 watch(() => store.phase, (phase) => {
 	if (phase === 'racing') {
 		router.push('/race');
+	} else if (phase === 'lobby') {
+		router.push('/lobby');
 	}
 });
 </script>

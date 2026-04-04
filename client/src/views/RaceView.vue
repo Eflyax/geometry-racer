@@ -27,6 +27,14 @@
 				<span class="result-name">{{ getPlayerName(r.playerId) }}</span>
 				<span class="result-time">{{ formatTime(r.finishTime) }}</span>
 			</div>
+			<button
+				v-if="store.isHost"
+				class="btn btn-lobby"
+				@click.stop="store.backToLobby()"
+			>
+				Zpět do lobby
+			</button>
+			<p v-else class="waiting">Čekám na hosta...</p>
 		</div>
 
 		<div class="speed-indicator" v-if="store.myCar && !store.myCar.finished">
@@ -37,11 +45,19 @@
 
 <script setup lang="ts">
 import { computed, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useGameStore } from '@/store/game';
 import { MAX_SPEED } from 'animal-racer-shared';
 import TrackSvg from '@/components/TrackSvg.vue';
 
 const store = useGameStore();
+const router = useRouter();
+
+watch(() => store.phase, (p) => {
+	if (p === 'lobby') {
+		router.push('/lobby');
+	}
+});
 
 const speedPercent = computed(() => {
 	if (!store.myCar) return 0;
@@ -155,5 +171,26 @@ function formatTime(ms: number): string {
 	background: linear-gradient(90deg, #4CAF50, #FFEB3B, #f44336);
 	transition: width 0.1s;
 	border-radius: 3px;
+}
+
+.btn-lobby {
+	display: block;
+	width: 100%;
+	margin-top: 1rem;
+	padding: 12px;
+	border: none;
+	border-radius: 8px;
+	font-size: 1rem;
+	font-weight: 600;
+	cursor: pointer;
+	background: linear-gradient(135deg, #3F51B5, #03A9F4);
+	color: white;
+}
+
+.waiting {
+	text-align: center;
+	color: #999;
+	font-style: italic;
+	margin-top: 1rem;
 }
 </style>

@@ -17,7 +17,8 @@ export type ClientMessage =
 	| { type: 'CONFIRM_PAIRING' }
 	| { type: 'TOUCH_START' }
 	| { type: 'TOUCH_END' }
-	| { type: 'REQUEST_QR' };
+	| { type: 'REQUEST_QR' }
+	| { type: 'BACK_TO_LOBBY' };
 
 export type ServerMessage =
 	| { type: 'ROOM_JOINED'; room: RoomState; yourPlayerId: string }

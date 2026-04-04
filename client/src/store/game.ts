@@ -150,6 +150,10 @@ export const useGameStore = defineStore('game', () => {
 		send({ type: 'TOUCH_END' });
 	}
 
+	function backToLobby(): void {
+		send({ type: 'BACK_TO_LOBBY' });
+	}
+
 	function sendScreenInfo(): void {
 		send({
 			type: 'SCREEN_INFO',
@@ -190,6 +194,7 @@ export const useGameStore = defineStore('game', () => {
 		confirmPairing,
 		touchStart,
 		touchEnd,
+		backToLobby,
 		sendScreenInfo,
 		disconnect,
 	};

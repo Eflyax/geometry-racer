@@ -152,6 +152,12 @@ export class Room {
 			case 'TOUCH_END':
 				cp.touching = false;
 				break;
+
+			case 'BACK_TO_LOBBY':
+				if (playerId === this.hostId && this.phase === 'finished') {
+					this.returnToLobby();
+				}
+				break;
 		}
 	}
 
@@ -262,6 +268,27 @@ export class Room {
 
 		this.broadcast({ type: 'RACE_FINISHED', rankings });
 		this.broadcast({ type: 'PHASE_CHANGE', phase: 'finished' });
+	}
+
+	private returnToLobby(): void {
+		if (this.gameInterval) {
+			clearInterval(this.gameInterval);
+			this.gameInterval = null;
+		}
+
+		this.phase = 'lobby';
+		this.grid = [];
+		this.track = null;
+		this.cars = [];
+		this.tick = 0;
+
+		for (const cp of this.players.values()) {
+			cp.player.pairingConfirmed = false;
+			cp.touching = false;
+		}
+
+		this.broadcast({ type: 'PHASE_CHANGE', phase: 'lobby' });
+		this.broadcastRoomState();
 	}
 
 	getState(): RoomState {

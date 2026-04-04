@@ -11,7 +11,7 @@
 			:d="lanePath"
 			fill="none"
 			stroke="#2a2a4a"
-			stroke-width="50"
+			:stroke-width="track.laneWidth * 0.8"
 			stroke-linecap="round"
 			stroke-linejoin="round"
 		/>
@@ -21,29 +21,26 @@
 			:d="lanePath"
 			fill="none"
 			stroke="#3a3a5a"
-			stroke-width="2"
-			stroke-dasharray="10 10"
+			stroke-width="1"
+			stroke-dasharray="6 6"
 		/>
 
-		<!-- Start/finish lines -->
+		<!-- Start/finish line -->
 		<line
-			:x1="startLine.x" :y1="startLine.y1" :x2="startLine.x" :y2="startLine.y2"
-			stroke="#4CAF50" stroke-width="4"
-		/>
-		<line
-			:x1="finishLine.x" :y1="finishLine.y1" :x2="finishLine.x" :y2="finishLine.y2"
-			stroke="#f44336" stroke-width="4"
+			:x1="startFinishLine.x1" :y1="startFinishLine.y1"
+			:x2="startFinishLine.x2" :y2="startFinishLine.y2"
+			stroke="#FFEB3B" stroke-width="4" stroke-dasharray="8 4"
 		/>
 
 		<!-- Cars -->
 		<g v-for="car in cars" :key="car.playerId">
 			<rect
 				v-if="carPositions[car.playerId]"
-				:x="carPositions[car.playerId]!.x - 20"
-				:y="carPositions[car.playerId]!.y - 10"
-				width="40"
-				height="20"
-				rx="4"
+				:x="carPositions[car.playerId]!.x - 12"
+				:y="carPositions[car.playerId]!.y - 6"
+				width="24"
+				height="12"
+				rx="3"
 				:fill="car.derailed ? '#666' : getPlayerColor(car.playerId)"
 				:opacity="car.derailed ? 0.4 : 1"
 				:transform="`rotate(${carPositions[car.playerId]!.angle * 180 / Math.PI}, ${carPositions[car.playerId]!.x}, ${carPositions[car.playerId]!.y})`"
@@ -102,28 +99,23 @@ function buildLanePath(lane: number): string {
 	for (let i = 1; i < points.length; i++) {
 		d += ` L ${points[i].x} ${points[i].y}`;
 	}
+	d += ' Z';
 	return d;
 }
 
-const startLine = computed(() => {
+const startFinishLine = computed(() => {
 	const seg = props.track.segments[0];
-	if (!seg) return { x: 0, y1: 0, y2: 0 };
+	if (!seg) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+	const pos = evalBezier(seg, 0);
+	const d1 = bezierDerivative1(seg, 0);
+	const angle = Math.atan2(d1.y, d1.x);
+	const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
 	const spread = props.track.laneCount * props.track.laneWidth;
 	return {
-		x: seg.p0.x,
-		y1: seg.p0.y - spread,
-		y2: seg.p0.y + spread,
-	};
-});
-
-const finishLine = computed(() => {
-	const seg = props.track.segments[props.track.segments.length - 1];
-	if (!seg) return { x: 0, y1: 0, y2: 0 };
-	const spread = props.track.laneCount * props.track.laneWidth;
-	return {
-		x: seg.p3.x,
-		y1: seg.p3.y - spread,
-		y2: seg.p3.y + spread,
+		x1: pos.x + normal.x * spread,
+		y1: pos.y + normal.y * spread,
+		x2: pos.x - normal.x * spread,
+		y2: pos.y - normal.y * spread,
 	};
 });
 

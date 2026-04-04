@@ -38,3 +38,41 @@ test('two players can create and join a room', async ({ browser }) => {
 	await host.close();
 	await guest.close();
 });
+
+test('back to lobby after race', async ({ browser }) => {
+	const host = await browser.newPage();
+	const guest = await browser.newPage();
+
+	// Create and join room
+	await host.goto('/');
+	await host.fill('input[placeholder="Tvoje jméno"]', 'Host');
+	await host.click('button:has-text("Vytvořit místnost")');
+	await expect(host.locator('.code')).toBeVisible({ timeout: 5000 });
+	const roomCode = await host.locator('.code').textContent();
+
+	await guest.goto('/');
+	await guest.fill('input[placeholder="Tvoje jméno"]', 'Guest');
+	await guest.fill('input[placeholder="Kód místnosti"]', roomCode!.trim());
+	await guest.click('button:has-text("Připojit se")');
+	await expect(guest.locator('.code')).toBeVisible({ timeout: 5000 });
+
+	// Host starts game -> pairing phase
+	await expect(host.locator('button:has-text("Start")')).toBeEnabled({ timeout: 3000 });
+	await host.click('button:has-text("Start")');
+
+	// Both confirm pairing
+	await expect(host.locator('button:has-text("Potvrzuji pozici")')).toBeVisible({ timeout: 5000 });
+	await expect(guest.locator('button:has-text("Potvrzuji pozici")')).toBeVisible({ timeout: 5000 });
+	await host.click('button:has-text("Potvrzuji pozici")');
+	await guest.click('button:has-text("Potvrzuji pozici")');
+
+	// Race should start - track SVG should appear
+	await expect(host.locator('.track-svg')).toBeVisible({ timeout: 5000 });
+	await expect(guest.locator('.track-svg')).toBeVisible({ timeout: 5000 });
+
+	// Verify the race is running (speed indicator visible)
+	await expect(host.locator('.speed-indicator')).toBeVisible({ timeout: 3000 });
+
+	await host.close();
+	await guest.close();
+});
