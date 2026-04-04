@@ -32,7 +32,9 @@ export class Room {
 		wiggliness: 50,
 		devMode: false,
 		laps: 1,
-		accel: 600,
+		accel: 180,
+		maxSpeed: 600,
+		decel: 400,
 	};
 	lastActivity = Date.now();
 

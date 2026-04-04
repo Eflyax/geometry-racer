@@ -64,6 +64,8 @@ export interface RoomConfig {
 	devMode: boolean;
 	laps: number;
 	accel: number;
+	maxSpeed: number;
+	decel: number;
 }
 
 export type GamePhase = 'lobby' | 'measuring' | 'pairing' | 'racing' | 'finished';

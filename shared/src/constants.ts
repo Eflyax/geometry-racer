@@ -1,7 +1,7 @@
 export const TICK_RATE = 60;
 export const TICK_MS = 1000 / TICK_RATE;
-export const MAX_SPEED = 800;
-export const ACCEL = 600;
+export const MAX_SPEED = 600;
+export const ACCEL = 180;
 export const DECEL = 400;
 export const LANE_WIDTH = 30;
 export const LANE_MARGIN = 10;

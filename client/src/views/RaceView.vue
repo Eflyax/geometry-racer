@@ -60,6 +60,16 @@
 				<input type="range" min="0.1" max="5" step="0.1" :value="store.config.derailmentCoefficient"
 					@input="store.updateConfig({ derailmentCoefficient: Number(($event.target as HTMLInputElement).value) })" />
 			</label>
+			<label>
+				Max rychlost: {{ store.config.maxSpeed }}
+				<input type="range" min="200" max="1200" step="50" :value="store.config.maxSpeed"
+					@input="store.updateConfig({ maxSpeed: Number(($event.target as HTMLInputElement).value) })" />
+			</label>
+			<label>
+				Brzdění: {{ store.config.decel }}
+				<input type="range" min="100" max="1000" step="50" :value="store.config.decel"
+					@input="store.updateConfig({ decel: Number(($event.target as HTMLInputElement).value) })" />
+			</label>
 		</div>
 	</div>
 </template>
@@ -68,7 +78,6 @@
 import { computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '@/store/game';
-import { MAX_SPEED } from 'animal-racer-shared';
 import TrackSvg from '@/components/TrackSvg.vue';
 
 const store = useGameStore();
@@ -82,7 +91,7 @@ watch(() => store.phase, (p) => {
 
 const speedPercent = computed(() => {
 	if (!store.myCar) return 0;
-	return (store.myCar.speed / MAX_SPEED) * 100;
+	return (store.myCar.speed / store.config.maxSpeed) * 100;
 });
 
 function getPlayerName(id: string): string {

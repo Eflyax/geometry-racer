@@ -43,7 +43,7 @@
 			:d="arrow.d"
 			fill="none"
 			stroke="#ea00ff"
-			stroke-width="2"
+			stroke-width="4"
 			stroke-linecap="round"
 			stroke-linejoin="round"
 			filter="url(#arrow-glow)"
@@ -146,8 +146,8 @@ const directionArrows = computed(() => {
 		const nx = -Math.sin(pos.angle);
 		const ny = Math.cos(pos.angle);
 
-		// Forward offset for the chevron tip
-		const tipOffset = 6;
+		// Forward offset for the chevron tip — larger = wider/flatter angle
+		const tipOffset = halfWidth * 0.8;
 		const fx = Math.cos(pos.angle) * tipOffset;
 		const fy = Math.sin(pos.angle) * tipOffset;
 

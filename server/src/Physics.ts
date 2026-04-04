@@ -1,6 +1,4 @@
 import type { BezierSegment, CarState, Point, RoomConfig, Track } from 'animal-racer-shared';
-import { DECEL, MAX_SPEED } from 'animal-racer-shared';
-
 export class Physics {
 	static updateCar(car: CarState, touching: boolean, dt: number, track: Track, config: RoomConfig): void {
 		if (car.finished) return;
@@ -17,9 +15,9 @@ export class Physics {
 		}
 
 		if (touching) {
-			car.speed = Math.min(car.speed + config.accel * dt, MAX_SPEED);
+			car.speed = Math.min(car.speed + config.accel * dt, config.maxSpeed);
 		} else {
-			car.speed = Math.max(car.speed - DECEL * dt, 0);
+			car.speed = Math.max(car.speed - config.decel * dt, 0);
 		}
 
 		if (car.speed > 0) {
