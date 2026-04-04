@@ -53,6 +53,11 @@
 				<input type="range" min="500" max="5000" step="100" :value="store.config.penaltyDuration"
 					@input="store.updateConfig({ penaltyDuration: Number(($event.target as HTMLInputElement).value) })" />
 			</label>
+			<label>
+				Klikatost: {{ store.config.wiggliness }}
+				<input type="range" min="1" max="100" step="1" :value="store.config.wiggliness"
+					@input="store.updateConfig({ wiggliness: Number(($event.target as HTMLInputElement).value) })" />
+			</label>
 		</div>
 
 		<div v-if="store.isHost" class="btn-wrapper" :title="startTooltip">

@@ -29,6 +29,7 @@ export class Room {
 		maxPlayers: 8,
 		derailmentCoefficient: 1.0,
 		penaltyDuration: 2000,
+		wiggliness: 50,
 	};
 	lastActivity = Date.now();
 
@@ -185,7 +186,7 @@ export class Room {
 		this.grid = pairing.grid;
 
 		const trackGen = new TrackGenerator();
-		this.track = trackGen.generate(pairing.worldWidth, pairing.worldHeight, playerList.length);
+		this.track = trackGen.generate(pairing.worldWidth, pairing.worldHeight, playerList.length, this.config.wiggliness);
 
 		for (const cp of this.players.values()) {
 			const cell = this.grid.find((c) => c.playerId === cp.player.id);

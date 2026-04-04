@@ -60,6 +60,7 @@ export interface RoomConfig {
 	maxPlayers: number;
 	derailmentCoefficient: number;
 	penaltyDuration: number;
+	wiggliness: number;
 }
 
 export type GamePhase = 'lobby' | 'measuring' | 'pairing' | 'racing' | 'finished';

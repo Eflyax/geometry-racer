@@ -2,9 +2,9 @@ import type { BezierSegment, Point, Track } from 'animal-racer-shared';
 import { LANE_WIDTH } from 'animal-racer-shared';
 
 export class TrackGenerator {
-	generate(worldWidth: number, worldHeight: number, laneCount: number): Track {
+	generate(worldWidth: number, worldHeight: number, laneCount: number, wiggliness: number = 50): Track {
 		const margin = 30 + LANE_WIDTH * laneCount;
-		const segments = this.generateClosedLoop(worldWidth, worldHeight, margin);
+		const segments = this.generateClosedLoop(worldWidth, worldHeight, margin, wiggliness);
 		const arcLengthLUT = this.buildArcLengthLUT(segments);
 		const totalArcLength = arcLengthLUT[arcLengthLUT.length - 1]?.length ?? 0;
 
@@ -18,23 +18,33 @@ export class TrackGenerator {
 		};
 	}
 
-	private generateClosedLoop(worldWidth: number, worldHeight: number, margin: number): Array<BezierSegment> {
+	private generateClosedLoop(worldWidth: number, worldHeight: number, margin: number, wiggliness: number): Array<BezierSegment> {
 		const cx = worldWidth / 2;
 		const cy = worldHeight / 2;
 		const rx = (worldWidth - margin * 2) / 2;
 		const ry = (worldHeight - margin * 2) / 2;
 
-		// Main loop: 10-12 waypoints spread around the oval
-		// High rVariation range (0.85-1.0) keeps the track pushed out toward edges
-		const mainPointCount = 10 + Math.floor(Math.random() * 3);
+		// w = 0..1 normalized wiggliness
+		const w = Math.max(0, Math.min(100, wiggliness)) / 100;
+
+		// More waypoints = more turns. Range: 8 (w=0) to 28 (w=1)
+		const mainPointCount = Math.round(8 + w * 20) + Math.floor(Math.random() * 3);
 		const waypoints: Array<Point> = [];
+
+		// Radial variation: low wiggliness = smooth oval (0.95-1.0),
+		// high wiggliness = jagged path alternating between inner and outer (0.4-1.0)
+		const rMin = 0.95 - w * 0.55;  // 0.95 → 0.4
+		const rRange = 0.05 + w * 0.15; // 0.05 → 0.2
 
 		for (let i = 0; i < mainPointCount; i++) {
 			const angle = (i / mainPointCount) * Math.PI * 2;
-			const rVariation = 0.85 + Math.random() * 0.15;
+			// Alternate between pushing in and out for zigzag effect
+			const zigzag = w > 0.3 ? (i % 2 === 0 ? 1 : -1) * w * 0.25 : 0;
+			const rVariation = rMin + Math.random() * rRange + zigzag;
+			const r = Math.max(0.3, Math.min(1.0, rVariation));
 			waypoints.push({
-				x: cx + Math.cos(angle) * rx * rVariation,
-				y: cy + Math.sin(angle) * ry * rVariation,
+				x: cx + Math.cos(angle) * rx * r,
+				y: cy + Math.sin(angle) * ry * r,
 			});
 		}
 
