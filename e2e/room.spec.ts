@@ -76,3 +76,41 @@ test('back to lobby after race', async ({ browser }) => {
 	await host.close();
 	await guest.close();
 });
+
+test('dev mode: single player, race, restart', async ({ page }) => {
+	// Create room
+	await page.goto('/');
+	await page.fill('input[placeholder="Tvoje jméno"]', 'Dev');
+	await page.click('button:has-text("Vytvořit místnost")');
+	await expect(page.locator('.code')).toBeVisible({ timeout: 5000 });
+
+	// Enable dev mode
+	await page.click('input[type="checkbox"]');
+
+	// Start should be enabled with 1 player
+	const startBtn = page.locator('button:has-text("Start")');
+	await expect(startBtn).toBeEnabled({ timeout: 2000 });
+	await startBtn.click();
+
+	// Confirm pairing
+	await expect(page.locator('button:has-text("Potvrzuji pozici")')).toBeVisible({ timeout: 5000 });
+	await page.click('button:has-text("Potvrzuji pozici")');
+
+	// Race starts - track visible, speed indicator present
+	await expect(page.locator('.track-svg')).toBeVisible({ timeout: 5000 });
+	await expect(page.locator('.speed-indicator')).toBeVisible({ timeout: 3000 });
+
+	// Hold mouse to accelerate
+	await page.mouse.down();
+	await page.waitForTimeout(500);
+	await page.mouse.up();
+
+	// Dev restart button should be visible and work
+	const restartBtn = page.locator('.btn-dev-restart');
+	await expect(restartBtn).toBeVisible();
+	await restartBtn.click();
+
+	// Track should still be visible after restart (new race started)
+	await expect(page.locator('.track-svg')).toBeVisible({ timeout: 5000 });
+	await expect(page.locator('.speed-indicator')).toBeVisible({ timeout: 3000 });
+});

@@ -1,10 +1,20 @@
 import type { BezierSegment, Point, Track } from 'animal-racer-shared';
 import { LANE_WIDTH } from 'animal-racer-shared';
 
+const MAX_TURN_DEG = 120;
+const MAX_TURN_RAD = MAX_TURN_DEG * Math.PI / 180;
+
 export class TrackGenerator {
+	private margin = 0;
+	private worldWidth = 0;
+	private worldHeight = 0;
+
 	generate(worldWidth: number, worldHeight: number, laneCount: number, wiggliness: number = 50): Track {
-		const margin = 30 + LANE_WIDTH * laneCount;
-		const segments = this.generateClosedLoop(worldWidth, worldHeight, margin, wiggliness);
+		this.worldWidth = worldWidth;
+		this.worldHeight = worldHeight;
+		this.margin = 30 + LANE_WIDTH * laneCount;
+
+		const segments = this.generateClosedLoop(wiggliness);
 		const arcLengthLUT = this.buildArcLengthLUT(segments);
 		const totalArcLength = arcLengthLUT[arcLengthLUT.length - 1]?.length ?? 0;
 
@@ -18,49 +28,61 @@ export class TrackGenerator {
 		};
 	}
 
-	private generateClosedLoop(worldWidth: number, worldHeight: number, margin: number, wiggliness: number): Array<BezierSegment> {
-		const cx = worldWidth / 2;
-		const cy = worldHeight / 2;
-		const rx = (worldWidth - margin * 2) / 2;
-		const ry = (worldHeight - margin * 2) / 2;
-
-		// w = 0..1 normalized wiggliness
+	private generateClosedLoop(wiggliness: number): Array<BezierSegment> {
 		const w = Math.max(0, Math.min(100, wiggliness)) / 100;
+		const { margin, worldWidth, worldHeight } = this;
 
-		// More waypoints = more turns. Range: 8 (w=0) to 28 (w=1)
-		const mainPointCount = Math.round(8 + w * 20) + Math.floor(Math.random() * 3);
+		const left = margin;
+		const right = worldWidth - margin;
+		const top = margin;
+		const bottom = worldHeight - margin;
+		const halfW = (right - left) / 2;
+		const halfH = (bottom - top) / 2;
+
+		// Points per side: 3 (w=0) to 7 (w=1)
+		const perSide = Math.round(3 + w * 4) + Math.floor(Math.random() * 2);
+
 		const waypoints: Array<Point> = [];
 
-		// Radial variation: low wiggliness = smooth oval (0.95-1.0),
-		// high wiggliness = jagged path alternating between inner and outer (0.4-1.0)
-		const rMin = 0.95 - w * 0.55;  // 0.95 → 0.4
-		const rRange = 0.05 + w * 0.15; // 0.05 → 0.2
+		// Max inward offset: 10% (smooth) to 80% (wiggly) of half-dimension
+		const maxInwardFrac = 0.1 + w * 0.7;
 
-		for (let i = 0; i < mainPointCount; i++) {
-			const angle = (i / mainPointCount) * Math.PI * 2;
-			// Alternate between pushing in and out for zigzag effect
-			const zigzag = w > 0.3 ? (i % 2 === 0 ? 1 : -1) * w * 0.25 : 0;
-			const rVariation = rMin + Math.random() * rRange + zigzag;
-			const r = Math.max(0.3, Math.min(1.0, rVariation));
-			waypoints.push({
-				x: cx + Math.cos(angle) * rx * r,
-				y: cy + Math.sin(angle) * ry * r,
-			});
+		// Top edge (left → right)
+		for (let i = 0; i < perSide; i++) {
+			const frac = (i + 0.5) / perSide;
+			const inward = Math.random() * maxInwardFrac * halfH;
+			waypoints.push({ x: left + (right - left) * frac, y: top + inward });
+		}
+		// Right edge (top → bottom)
+		for (let i = 0; i < perSide; i++) {
+			const frac = (i + 0.5) / perSide;
+			const inward = Math.random() * maxInwardFrac * halfW;
+			waypoints.push({ x: right - inward, y: top + (bottom - top) * frac });
+		}
+		// Bottom edge (right → left)
+		for (let i = 0; i < perSide; i++) {
+			const frac = 1 - (i + 0.5) / perSide;
+			const inward = Math.random() * maxInwardFrac * halfH;
+			waypoints.push({ x: left + (right - left) * frac, y: bottom - inward });
+		}
+		// Left edge (bottom → top)
+		for (let i = 0; i < perSide; i++) {
+			const frac = 1 - (i + 0.5) / perSide;
+			const inward = Math.random() * maxInwardFrac * halfW;
+			waypoints.push({ x: left + inward, y: top + (bottom - top) * frac });
 		}
 
-		// Clamp inside world
-		for (const wp of waypoints) {
-			wp.x = Math.max(margin, Math.min(worldWidth - margin, wp.x));
-			wp.y = Math.max(margin, Math.min(worldHeight - margin, wp.y));
-		}
+		this.clampPoints(waypoints);
 
-		// Insert equalizer loop between two waypoints on the side with most space
-		// Pick the pair with longest distance for a spacious equalizer
+		// Smooth sharp turns (clamped within bounds)
+		const smoothed = this.smoothSharpTurns(waypoints);
+
+		// Insert equalizer loop at the longest gap
 		let bestIdx = 0;
 		let bestDist = 0;
-		for (let i = 0; i < waypoints.length; i++) {
-			const a = waypoints[i];
-			const b = waypoints[(i + 1) % waypoints.length];
+		for (let i = 0; i < smoothed.length; i++) {
+			const a = smoothed[i];
+			const b = smoothed[(i + 1) % smoothed.length];
 			const dist = Math.hypot(b.x - a.x, b.y - a.y);
 			if (dist > bestDist) {
 				bestDist = dist;
@@ -68,21 +90,72 @@ export class TrackGenerator {
 			}
 		}
 
-		const eqStart = waypoints[bestIdx];
-		const eqEnd = waypoints[(bestIdx + 1) % waypoints.length];
-		const eqWaypoints = this.generateEqualizerLoop(eqStart, eqEnd, margin, worldWidth, worldHeight);
+		const eqStart = smoothed[bestIdx];
+		const eqEnd = smoothed[(bestIdx + 1) % smoothed.length];
+		const eqWaypoints = this.generateEqualizerLoop(eqStart, eqEnd);
 
-		// Splice equalizer into the waypoint ring
-		const before = waypoints.slice(0, bestIdx + 1);
-		const after = waypoints.slice(bestIdx + 1);
+		const before = smoothed.slice(0, bestIdx + 1);
+		const after = smoothed.slice(bestIdx + 1);
 		const allWaypoints = [...before, ...eqWaypoints, ...after];
 
 		return this.waypointsToClosedBezier(allWaypoints);
 	}
 
-	private generateEqualizerLoop(start: Point, end: Point, margin: number, worldWidth: number, worldHeight: number): Array<Point> {
-		// Equalizer loop: a visible clockwise circle inserted between start and end.
-		// Sized proportionally to the world for clear visibility.
+	private clampPoints(pts: Array<Point>): void {
+		const { margin, worldWidth, worldHeight } = this;
+		for (const p of pts) {
+			p.x = Math.max(margin, Math.min(worldWidth - margin, p.x));
+			p.y = Math.max(margin, Math.min(worldHeight - margin, p.y));
+		}
+	}
+
+	private smoothSharpTurns(waypoints: Array<Point>): Array<Point> {
+		const pts = [...waypoints];
+
+		// Push sharp vertices toward the midpoint of their neighbours
+		// (softens the angle without moving points out of bounds)
+		for (let iter = 0; iter < 30; iter++) {
+			let anySharp = false;
+
+			for (let i = 0; i < pts.length; i++) {
+				const prev = pts[(i - 1 + pts.length) % pts.length];
+				const curr = pts[i];
+				const nxt = pts[(i + 1) % pts.length];
+				const angle = this.turnAngle(prev, curr, nxt);
+
+				if (angle > MAX_TURN_RAD) {
+					anySharp = true;
+					// Move curr toward the midpoint of prev-nxt (softens the bend)
+					const midX = (prev.x + nxt.x) / 2;
+					const midY = (prev.y + nxt.y) / 2;
+					pts[i] = {
+						x: curr.x * 0.5 + midX * 0.5,
+						y: curr.y * 0.5 + midY * 0.5,
+					};
+				}
+			}
+
+			if (!anySharp) break;
+		}
+
+		return pts;
+	}
+
+	private turnAngle(a: Point, b: Point, c: Point): number {
+		const inX = b.x - a.x;
+		const inY = b.y - a.y;
+		const outX = c.x - b.x;
+		const outY = c.y - b.y;
+		const inLen = Math.hypot(inX, inY);
+		const outLen = Math.hypot(outX, outY);
+		if (inLen < 1e-6 || outLen < 1e-6) return 0;
+
+		const dot = (inX * outX + inY * outY) / (inLen * outLen);
+		return Math.acos(Math.max(-1, Math.min(1, dot)));
+	}
+
+	private generateEqualizerLoop(start: Point, end: Point): Array<Point> {
+		const { margin, worldWidth, worldHeight } = this;
 
 		const midX = (start.x + end.x) / 2;
 		const midY = (start.y + end.y) / 2;
@@ -90,30 +163,26 @@ export class TrackGenerator {
 		const dx = end.x - start.x;
 		const dy = end.y - start.y;
 		const segLen = Math.hypot(dx, dy);
+		if (segLen < 1e-6) return [];
+
 		const perpX = -dy / segLen;
 		const perpY = dx / segLen;
 
-		// Point the loop inward (toward world center)
 		const toCenterX = worldWidth / 2 - midX;
 		const toCenterY = worldHeight / 2 - midY;
 		const dot = perpX * toCenterX + perpY * toCenterY;
 		const inwardSign = dot > 0 ? 1 : -1;
 
-		// Equalizer radius: large enough to be clearly visible
-		// Scales with world size, at least 15% of the shorter dimension
 		const minDim = Math.min(worldWidth, worldHeight);
 		const loopRadius = Math.max(minDim * 0.12, 80);
 
-		// Center the loop inward from the midpoint
 		const loopCX = Math.max(margin + loopRadius, Math.min(worldWidth - margin - loopRadius,
 			midX + perpX * inwardSign * loopRadius * 1.8));
 		const loopCY = Math.max(margin + loopRadius, Math.min(worldHeight - margin - loopRadius,
 			midY + perpY * inwardSign * loopRadius * 1.8));
 
-		// Entry: point on the loop circle closest to midpoint
 		const entryAngle = Math.atan2(midY - loopCY, midX - loopCX);
 
-		// 8 waypoints clockwise around the loop for a smooth circle
 		const loopPoints: Array<Point> = [];
 		for (let i = 0; i < 8; i++) {
 			const angle = entryAngle - (i / 8) * Math.PI * 2;
@@ -129,9 +198,6 @@ export class TrackGenerator {
 	private waypointsToClosedBezier(waypoints: Array<Point>): Array<BezierSegment> {
 		const n = waypoints.length;
 
-		// Pre-compute tangent direction at each waypoint as the bisector
-		// of incoming and outgoing edge directions. This is robust even when
-		// adjacent segments have very different lengths (e.g. main loop → equalizer).
 		const tangentDirs: Array<Point> = [];
 		for (let i = 0; i < n; i++) {
 			const prev = waypoints[(i - 1 + n) % n];
@@ -141,7 +207,6 @@ export class TrackGenerator {
 			const inDist = Math.hypot(curr.x - prev.x, curr.y - prev.y);
 			const outDist = Math.hypot(next.x - curr.x, next.y - curr.y);
 
-			// Normalized incoming and outgoing directions
 			const inDir = inDist > 0
 				? { x: (curr.x - prev.x) / inDist, y: (curr.y - prev.y) / inDist }
 				: { x: 0, y: 0 };
@@ -149,9 +214,6 @@ export class TrackGenerator {
 				? { x: (next.x - curr.x) / outDist, y: (next.y - curr.y) / outDist }
 				: { x: 0, y: 0 };
 
-			// Average direction (bisector) gives a smooth tangent.
-			// When the angle is very sharp (bisector near zero), fall back
-			// to the outgoing direction to avoid instability.
 			let tx = inDir.x + outDir.x;
 			let ty = inDir.y + outDir.y;
 			const tLen = Math.hypot(tx, ty);
@@ -166,7 +228,6 @@ export class TrackGenerator {
 			tangentDirs.push({ x: tx, y: ty });
 		}
 
-		// Pre-compute edge lengths for clamping
 		const edgeLens: Array<number> = [];
 		for (let i = 0; i < n; i++) {
 			const a = waypoints[i];
@@ -181,9 +242,6 @@ export class TrackGenerator {
 			const p3 = waypoints[(i + 1) % n];
 			const segDist = edgeLens[i];
 
-			// Control point distance: clamped to the shorter of this segment
-			// and its neighbours, so transitions between long and short segments
-			// (main loop → equalizer) never overshoot.
 			const prevLen = edgeLens[(i - 1 + n) % n];
 			const nextLen = edgeLens[(i + 1) % n];
 			const cpDist = Math.min(segDist, prevLen, nextLen) / 3;

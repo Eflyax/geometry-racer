@@ -30,6 +30,7 @@ export class Room {
 		derailmentCoefficient: 1.0,
 		penaltyDuration: 2000,
 		wiggliness: 50,
+		devMode: false,
 	};
 	lastActivity = Date.now();
 
@@ -159,6 +160,12 @@ export class Room {
 					this.returnToLobby();
 				}
 				break;
+
+			case 'DEV_RESTART':
+				if (playerId === this.hostId && this.config.devMode) {
+					this.devRestart();
+				}
+				break;
 		}
 	}
 
@@ -269,6 +276,38 @@ export class Room {
 
 		this.broadcast({ type: 'RACE_FINISHED', rankings });
 		this.broadcast({ type: 'PHASE_CHANGE', phase: 'finished' });
+	}
+
+	private devRestart(): void {
+		if (this.gameInterval) {
+			clearInterval(this.gameInterval);
+			this.gameInterval = null;
+		}
+
+		// Regenerate track
+		const playerList = Array.from(this.players.values()).map((cp) => cp.player);
+		const pairing = PairingManager.assignGrid(playerList);
+		this.grid = pairing.grid;
+
+		const trackGen = new TrackGenerator();
+		this.track = trackGen.generate(pairing.worldWidth, pairing.worldHeight, playerList.length, this.config.wiggliness);
+
+		// Send new grid + track to all clients
+		for (const cp of this.players.values()) {
+			const cell = this.grid.find((c) => c.playerId === cp.player.id);
+			const edges = pairing.edges.get(cp.player.id) ?? [];
+			if (cell) {
+				this.send(cp.ws, {
+					type: 'GRID_ASSIGNED',
+					yourCell: cell,
+					edges,
+					track: this.track,
+				});
+			}
+		}
+
+		// Reset and start racing
+		this.startRacing();
 	}
 
 	private returnToLobby(): void {

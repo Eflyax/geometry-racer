@@ -46,7 +46,7 @@ const router = useRouter();
 const route = useRoute();
 const store = useGameStore();
 
-const playerName = ref('');
+const playerName = ref(localStorage.getItem('playerName') ?? '');
 const joinCode = ref('');
 const error = ref('');
 
@@ -57,6 +57,10 @@ const joinTooltip = computed(() => {
 	return '';
 });
 
+function saveName(): void {
+	localStorage.setItem('playerName', playerName.value.trim());
+}
+
 onMounted(() => {
 	const code = route.params.code;
 	if (typeof code === 'string' && code.length === 4) {
@@ -66,6 +70,7 @@ onMounted(() => {
 
 async function handleCreate(): Promise<void> {
 	try {
+		saveName();
 		await store.connect();
 		await store.createRoom(playerName.value.trim());
 		store.sendScreenInfo();
@@ -77,6 +82,7 @@ async function handleCreate(): Promise<void> {
 
 async function handleJoin(): Promise<void> {
 	try {
+		saveName();
 		await store.connect();
 		await store.joinRoom(joinCode.value, playerName.value.trim());
 		store.sendScreenInfo();

@@ -25,6 +25,31 @@
 			stroke-dasharray="6 6"
 		/>
 
+		<!-- Glow filter -->
+		<defs>
+			<filter id="arrow-glow" x="-50%" y="-50%" width="200%" height="200%">
+				<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+				<feMerge>
+					<feMergeNode in="blur" />
+					<feMergeNode in="SourceGraphic" />
+				</feMerge>
+			</filter>
+		</defs>
+
+		<!-- Direction arrows -->
+		<path
+			v-for="(arrow, i) in directionArrows"
+			:key="'arrow-' + i"
+			:d="arrow.d"
+			fill="none"
+			stroke="#ea00ff"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			filter="url(#arrow-glow)"
+			style="pointer-events: none"
+		/>
+
 		<!-- Start/finish line -->
 		<line
 			:x1="startFinishLine.x1" :y1="startFinishLine.y1"
@@ -101,6 +126,77 @@ function buildLanePath(lane: number): string {
 	}
 	d += ' Z';
 	return d;
+}
+
+const directionArrows = computed(() => {
+	const arrowSpacing = 240; // car size (24) × 10
+	const totalLen = props.track.totalArcLength;
+	if (totalLen <= 0) return [];
+
+	const count = Math.floor(totalLen / arrowSpacing);
+	const halfWidth = (props.track.laneCount * props.track.laneWidth) / 2;
+	const arrows: Array<{ d: string }> = [];
+
+	for (let i = 0; i < count; i++) {
+		const targetLen = i * arrowSpacing;
+		const t = arcLengthToT(targetLen);
+		const pos = getCenterlinePosition(t);
+
+		// Normal perpendicular to direction
+		const nx = -Math.sin(pos.angle);
+		const ny = Math.cos(pos.angle);
+
+		// Forward offset for the chevron tip
+		const tipOffset = 6;
+		const fx = Math.cos(pos.angle) * tipOffset;
+		const fy = Math.sin(pos.angle) * tipOffset;
+
+		// Chevron: two lines from ends of the track width to a center tip
+		const x1 = pos.x + nx * halfWidth;
+		const y1 = pos.y + ny * halfWidth;
+		const x2 = pos.x + fx;
+		const y2 = pos.y + fy;
+		const x3 = pos.x - nx * halfWidth;
+		const y3 = pos.y - ny * halfWidth;
+
+		arrows.push({ d: `M ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3}` });
+	}
+
+	return arrows;
+});
+
+function arcLengthToT(targetLen: number): number {
+	const lut = props.track.arcLengthLUT;
+	if (lut.length < 2) return 0;
+
+	// Binary search in LUT
+	let lo = 0;
+	let hi = lut.length - 1;
+	while (lo < hi - 1) {
+		const mid = (lo + hi) >> 1;
+		if (lut[mid].length < targetLen) lo = mid;
+		else hi = mid;
+	}
+
+	const segLen = lut[hi].length - lut[lo].length;
+	if (segLen < 1e-6) return lut[lo].t;
+	const frac = (targetLen - lut[lo].length) / segLen;
+	return lut[lo].t + (lut[hi].t - lut[lo].t) * frac;
+}
+
+function getCenterlinePosition(globalT: number): { x: number; y: number; angle: number } {
+	const t = Math.max(0, Math.min(1, globalT));
+	const segCount = props.track.segments.length;
+	const segFloat = t * segCount;
+	const segIdx = Math.min(Math.floor(segFloat), segCount - 1);
+	const localT = segFloat - segIdx;
+
+	const seg = props.track.segments[segIdx];
+	const pos = evalBezier(seg, localT);
+	const d1 = bezierDerivative1(seg, localT);
+	const angle = Math.atan2(d1.y, d1.x);
+
+	return { x: pos.x, y: pos.y, angle };
 }
 
 const startFinishLine = computed(() => {

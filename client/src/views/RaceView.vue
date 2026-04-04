@@ -40,6 +40,14 @@
 		<div class="speed-indicator" v-if="store.myCar && !store.myCar.finished">
 			<div class="speed-bar" :style="{ width: speedPercent + '%' }"></div>
 		</div>
+
+		<button
+			v-if="store.config.devMode && store.isHost"
+			class="btn-dev-restart"
+			@click.stop="store.devRestart()"
+		>
+			Restart
+		</button>
 	</div>
 </template>
 
@@ -192,5 +200,21 @@ function formatTime(ms: number): string {
 	color: #999;
 	font-style: italic;
 	margin-top: 1rem;
+}
+
+.btn-dev-restart {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	padding: 8px 16px;
+	border: none;
+	border-radius: 6px;
+	font-size: 0.85rem;
+	font-weight: 600;
+	cursor: pointer;
+	background: #FF6B35;
+	color: white;
+	opacity: 0.8;
+	z-index: 10;
 }
 </style>

@@ -26,6 +26,7 @@ export const useGameStore = defineStore('game', () => {
 		derailmentCoefficient: 1.0,
 		penaltyDuration: 2000,
 		wiggliness: 50,
+		devMode: false,
 	});
 	const players = ref<Array<Player>>([]);
 	const myCell = ref<GridCell | null>(null);
@@ -155,6 +156,10 @@ export const useGameStore = defineStore('game', () => {
 		send({ type: 'BACK_TO_LOBBY' });
 	}
 
+	function devRestart(): void {
+		send({ type: 'DEV_RESTART' });
+	}
+
 	function sendScreenInfo(): void {
 		send({
 			type: 'SCREEN_INFO',
@@ -196,6 +201,7 @@ export const useGameStore = defineStore('game', () => {
 		touchStart,
 		touchEnd,
 		backToLobby,
+		devRestart,
 		sendScreenInfo,
 		disconnect,
 	};

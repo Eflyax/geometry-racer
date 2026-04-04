@@ -58,6 +58,11 @@
 				<input type="range" min="1" max="100" step="1" :value="store.config.wiggliness"
 					@input="store.updateConfig({ wiggliness: Number(($event.target as HTMLInputElement).value) })" />
 			</label>
+			<label class="checkbox-label">
+				<input type="checkbox" :checked="store.config.devMode"
+					@change="store.updateConfig({ devMode: ($event.target as HTMLInputElement).checked })" />
+				Developer
+			</label>
 		</div>
 
 		<div v-if="store.isHost" class="btn-wrapper" :title="startTooltip">
@@ -87,10 +92,10 @@ const showQr = ref(false);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 
 const startTooltip = computed(() => {
-	const missing = store.config.maxPlayers >= 2 ? 2 : store.config.maxPlayers;
-	if (store.players.length < 2) {
-		const need = 2 - store.players.length;
-		return `Potřeba ještě ${need} ${need === 1 ? 'hráče' : 'hráčů'} (min. 2)`;
+	const minPlayers = store.config.devMode ? 1 : 2;
+	if (store.players.length < minPlayers) {
+		const need = minPlayers - store.players.length;
+		return `Potřeba ještě ${need} ${need === 1 ? 'hráče' : 'hráčů'} (min. ${minPlayers})`;
 	}
 	return '';
 });
@@ -252,6 +257,12 @@ onMounted(() => {
 
 .config input[type="range"] {
 	width: 100%;
+}
+
+.checkbox-label {
+	flex-direction: row !important;
+	align-items: center !important;
+	gap: 8px !important;
 }
 
 .btn {
