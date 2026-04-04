@@ -58,6 +58,11 @@
 				<input type="range" min="1" max="100" step="1" :value="store.config.wiggliness"
 					@input="store.updateConfig({ wiggliness: Number(($event.target as HTMLInputElement).value) })" />
 			</label>
+			<label>
+				Počet kol: {{ store.config.laps }}
+				<input type="range" min="1" max="10" step="1" :value="store.config.laps"
+					@input="updateLaps(Number(($event.target as HTMLInputElement).value))" />
+			</label>
 			<label class="checkbox-label">
 				<input type="checkbox" :checked="store.config.devMode"
 					@change="store.updateConfig({ devMode: ($event.target as HTMLInputElement).checked })" />
@@ -104,6 +109,11 @@ function isColorTaken(color: string): boolean {
 	return store.players.some((p) => p.color === color && p.id !== store.myPlayerId);
 }
 
+function updateLaps(value: number): void {
+	store.updateConfig({ laps: value });
+	localStorage.setItem('laps', String(value));
+}
+
 watch(() => store.phase, (phase) => {
 	if (phase === 'measuring' || phase === 'pairing') {
 		store.sendScreenInfo();
@@ -122,6 +132,12 @@ watch(showQr, async (val) => {
 });
 
 onMounted(() => {
+	const savedLaps = localStorage.getItem('laps');
+	if (savedLaps && store.isHost) {
+		const laps = Math.max(1, Math.min(10, Number(savedLaps)));
+		store.updateConfig({ laps });
+	}
+
 	if (!store.roomCode) {
 		router.push('/');
 	}

@@ -27,6 +27,8 @@ export const useGameStore = defineStore('game', () => {
 		penaltyDuration: 2000,
 		wiggliness: 50,
 		devMode: false,
+		laps: 1,
+		accel: 600,
 	});
 	const players = ref<Array<Player>>([]);
 	const myCell = ref<GridCell | null>(null);

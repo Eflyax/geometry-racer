@@ -1,5 +1,5 @@
 import type { BezierSegment, CarState, Point, RoomConfig, Track } from 'animal-racer-shared';
-import { ACCEL, DECEL, MAX_SPEED } from 'animal-racer-shared';
+import { DECEL, MAX_SPEED } from 'animal-racer-shared';
 
 export class Physics {
 	static updateCar(car: CarState, touching: boolean, dt: number, track: Track, config: RoomConfig): void {
@@ -17,7 +17,7 @@ export class Physics {
 		}
 
 		if (touching) {
-			car.speed = Math.min(car.speed + ACCEL * dt, MAX_SPEED);
+			car.speed = Math.min(car.speed + config.accel * dt, MAX_SPEED);
 		} else {
 			car.speed = Math.max(car.speed - DECEL * dt, 0);
 		}
@@ -27,7 +27,9 @@ export class Physics {
 			const deltaT = deltaArc / track.totalArcLength;
 			car.t += deltaT;
 
-			const curvature = this.getCurvature(car.t, track);
+			// Curvature check uses t modulo 1 (position on the loop)
+			const trackT = car.t % 1;
+			const curvature = this.getCurvature(trackT, track);
 			if (curvature > 0) {
 				const maxSafeSpeed = config.derailmentCoefficient * 150 / curvature;
 				if (car.speed > maxSafeSpeed) {
@@ -39,8 +41,9 @@ export class Physics {
 			}
 		}
 
-		if (car.t >= 1.0) {
-			car.t = 1.0;
+		const targetLaps = config.laps;
+		if (car.t >= targetLaps) {
+			car.t = targetLaps;
 			car.finished = true;
 			car.finishTime = Date.now();
 			car.speed = 0;

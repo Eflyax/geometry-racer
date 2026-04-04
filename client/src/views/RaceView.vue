@@ -41,13 +41,26 @@
 			<div class="speed-bar" :style="{ width: speedPercent + '%' }"></div>
 		</div>
 
-		<button
+		<div
 			v-if="store.config.devMode && store.isHost"
-			class="btn-dev-restart"
-			@click.stop="store.devRestart()"
+			class="dev-panel"
+			@mousedown.stop
+			@mouseup.stop
+			@touchstart.stop
+			@touchend.stop
 		>
-			Restart
-		</button>
+			<button class="btn-dev-restart" @click="store.devRestart()">Restart</button>
+			<label>
+				Zrychlení: {{ store.config.accel }}
+				<input type="range" min="100" max="2000" step="50" :value="store.config.accel"
+					@input="store.updateConfig({ accel: Number(($event.target as HTMLInputElement).value) })" />
+			</label>
+			<label>
+				Citlivost vyjetí: {{ store.config.derailmentCoefficient.toFixed(1) }}
+				<input type="range" min="0.1" max="5" step="0.1" :value="store.config.derailmentCoefficient"
+					@input="store.updateConfig({ derailmentCoefficient: Number(($event.target as HTMLInputElement).value) })" />
+			</label>
+		</div>
 	</div>
 </template>
 
@@ -202,19 +215,40 @@ function formatTime(ms: number): string {
 	margin-top: 1rem;
 }
 
-.btn-dev-restart {
+.dev-panel {
 	position: absolute;
 	top: 10px;
 	right: 10px;
-	padding: 8px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	background: rgba(0, 0, 0, 0.75);
+	padding: 10px;
+	border-radius: 8px;
+	z-index: 10;
+	max-width: 200px;
+}
+
+.dev-panel label {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 0.75rem;
+	color: #ccc;
+}
+
+.dev-panel input[type="range"] {
+	width: 100%;
+}
+
+.btn-dev-restart {
+	padding: 6px 12px;
 	border: none;
 	border-radius: 6px;
-	font-size: 0.85rem;
+	font-size: 0.8rem;
 	font-weight: 600;
 	cursor: pointer;
 	background: #FF6B35;
 	color: white;
-	opacity: 0.8;
-	z-index: 10;
 }
 </style>

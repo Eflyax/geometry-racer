@@ -224,7 +224,7 @@ const carPositions = computed(() => {
 });
 
 function getPositionOnTrack(globalT: number, lane: number): { x: number; y: number; angle: number } {
-	const t = Math.max(0, Math.min(1, globalT));
+	const t = Math.max(0, Math.min(1, globalT % 1 || (globalT >= 1 ? 1 : 0)));
 	const segCount = props.track.segments.length;
 	const segFloat = t * segCount;
 	const segIdx = Math.min(Math.floor(segFloat), segCount - 1);

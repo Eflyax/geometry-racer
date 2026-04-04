@@ -62,6 +62,8 @@ export interface RoomConfig {
 	penaltyDuration: number;
 	wiggliness: number;
 	devMode: boolean;
+	laps: number;
+	accel: number;
 }
 
 export type GamePhase = 'lobby' | 'measuring' | 'pairing' | 'racing' | 'finished';

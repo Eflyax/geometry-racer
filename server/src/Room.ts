@@ -31,6 +31,8 @@ export class Room {
 		penaltyDuration: 2000,
 		wiggliness: 50,
 		devMode: false,
+		laps: 1,
+		accel: 600,
 	};
 	lastActivity = Date.now();
 
@@ -107,7 +109,7 @@ export class Room {
 
 		switch (msg.type) {
 			case 'UPDATE_CONFIG':
-				if (playerId === this.hostId && this.phase === 'lobby') {
+				if (playerId === this.hostId && (this.phase === 'lobby' || this.config.devMode)) {
 					Object.assign(this.config, msg.config);
 					this.broadcastRoomState();
 				}
