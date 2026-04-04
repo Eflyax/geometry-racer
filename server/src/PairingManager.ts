@@ -35,31 +35,54 @@ export class PairingManager {
 		const cols = Math.ceil(Math.sqrt(n));
 		const rows = Math.ceil(n / cols);
 
-		const avgWidth = players.reduce((s, p) => s + (p.screen?.width ?? 375), 0) / n;
-		const avgHeight = players.reduce((s, p) => s + (p.screen?.height ?? 667), 0) / n;
+		const defaultWidth = 375;
+		const defaultHeight = 667;
 
-		const grid: Array<GridCell> = [];
-		const edges = new Map<string, Array<PairingEdge>>();
-
+		// Build grid cells with actual screen dimensions
+		const rawCells: Array<{ playerId: string; col: number; row: number; sw: number; sh: number }> = [];
 		let idx = 0;
 		for (let row = 0; row < rows && idx < n; row++) {
 			for (let col = 0; col < cols && idx < n; col++) {
 				const player = players[idx];
-				const sw = player.screen?.width ?? avgWidth;
-				const sh = player.screen?.height ?? avgHeight;
-
-				grid.push({
+				rawCells.push({
 					playerId: player.id,
-					gridX: col,
-					gridY: row,
-					worldOffsetX: col * avgWidth,
-					worldOffsetY: row * avgHeight,
-					screenWidth: sw,
-					screenHeight: sh,
+					col,
+					row,
+					sw: player.screen?.width ?? defaultWidth,
+					sh: player.screen?.height ?? defaultHeight,
 				});
-				edges.set(player.id, []);
 				idx++;
 			}
+		}
+
+		// Per-column max width and per-row max height for seamless tiling
+		const colWidths = Array<number>(cols).fill(0);
+		const rowHeights = Array<number>(rows).fill(0);
+		for (const c of rawCells) {
+			colWidths[c.col] = Math.max(colWidths[c.col], c.sw);
+			rowHeights[c.row] = Math.max(rowHeights[c.row], c.sh);
+		}
+
+		// Prefix sums → world offsets
+		const colOffsets = Array<number>(cols).fill(0);
+		for (let c = 1; c < cols; c++) colOffsets[c] = colOffsets[c - 1] + colWidths[c - 1];
+		const rowOffsets = Array<number>(rows).fill(0);
+		for (let r = 1; r < rows; r++) rowOffsets[r] = rowOffsets[r - 1] + rowHeights[r - 1];
+
+		const grid: Array<GridCell> = [];
+		const edges = new Map<string, Array<PairingEdge>>();
+
+		for (const c of rawCells) {
+			grid.push({
+				playerId: c.playerId,
+				gridX: c.col,
+				gridY: c.row,
+				worldOffsetX: colOffsets[c.col],
+				worldOffsetY: rowOffsets[c.row],
+				screenWidth: c.sw,
+				screenHeight: c.sh,
+			});
+			edges.set(c.playerId, []);
 		}
 
 		let colorIdx = 0;
@@ -83,11 +106,9 @@ export class PairingManager {
 			}
 		}
 
-		return {
-			grid,
-			edges,
-			worldWidth: cols * avgWidth,
-			worldHeight: rows * avgHeight,
-		};
+		const worldWidth = colOffsets[cols - 1] + colWidths[cols - 1];
+		const worldHeight = rowOffsets[rows - 1] + rowHeights[rows - 1];
+
+		return { grid, edges, worldWidth, worldHeight };
 	}
 }
