@@ -27,9 +27,12 @@ export class Physics {
 
 			// Curvature check uses t modulo 1 (position on the loop)
 			const trackT = car.t % 1;
-			const curvature = this.getCurvature(trackT, track);
-			if (curvature > 0) {
-				const maxSafeSpeed = config.derailmentCoefficient * 150 / curvature;
+			const rawCurvature = this.getCurvature(trackT, track);
+			// Cap curvature to avoid extreme spikes at bezier junctions
+			const curvature = Math.min(rawCurvature, 2.0);
+			if (curvature > 0.01) {
+				// sqrt formula: physically correct (centripetal force = v²·κ)
+				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(40000 / curvature);
 				if (car.speed > maxSafeSpeed) {
 					car.derailed = true;
 					car.derailT = car.t;
