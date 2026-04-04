@@ -19,7 +19,14 @@
 			<p class="penalty-time">{{ Math.ceil((store.myCar.penaltyRemaining) / 1000) }}s</p>
 		</div>
 
-		<div v-if="store.phase === 'finished'" class="results-overlay">
+		<div
+			v-if="store.phase === 'finished'"
+			class="results-overlay"
+			@touchstart.stop
+			@touchend.stop
+			@mousedown.stop
+			@mouseup.stop
+		>
 			<h2>Výsledky</h2>
 			<div v-for="(r, i) in store.rankings" :key="r.playerId" class="result-row">
 				<span class="rank">{{ i + 1 }}.</span>
