@@ -1,0 +1,13 @@
+{
+	"name": "animal-racer",
+	"version": "1.0.0",
+	"private": true,
+	"workspaces": [
+		"shared",
+		"server",
+		"client"
+	],
+	"devDependencies": {
+		"@playwright/test": "^1.59.1"
+	}
+}

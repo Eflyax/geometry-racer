@@ -1,0 +1,190 @@
+<template>
+	<svg
+		:viewBox="viewBox"
+		class="track-svg"
+		xmlns="http://www.w3.org/2000/svg"
+	>
+		<!-- Track lanes -->
+		<path
+			v-for="(lanePath, i) in lanePaths"
+			:key="'lane-' + i"
+			:d="lanePath"
+			fill="none"
+			stroke="#2a2a4a"
+			stroke-width="50"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		/>
+		<path
+			v-for="(lanePath, i) in lanePaths"
+			:key="'lane-center-' + i"
+			:d="lanePath"
+			fill="none"
+			stroke="#3a3a5a"
+			stroke-width="2"
+			stroke-dasharray="10 10"
+		/>
+
+		<!-- Start/finish lines -->
+		<line
+			:x1="startLine.x" :y1="startLine.y1" :x2="startLine.x" :y2="startLine.y2"
+			stroke="#4CAF50" stroke-width="4"
+		/>
+		<line
+			:x1="finishLine.x" :y1="finishLine.y1" :x2="finishLine.x" :y2="finishLine.y2"
+			stroke="#f44336" stroke-width="4"
+		/>
+
+		<!-- Cars -->
+		<g v-for="car in cars" :key="car.playerId">
+			<rect
+				v-if="carPositions[car.playerId]"
+				:x="carPositions[car.playerId]!.x - 20"
+				:y="carPositions[car.playerId]!.y - 10"
+				width="40"
+				height="20"
+				rx="4"
+				:fill="car.derailed ? '#666' : getPlayerColor(car.playerId)"
+				:opacity="car.derailed ? 0.4 : 1"
+				:transform="`rotate(${carPositions[car.playerId]!.angle * 180 / Math.PI}, ${carPositions[car.playerId]!.x}, ${carPositions[car.playerId]!.y})`"
+			/>
+		</g>
+	</svg>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue';
+import type { BezierSegment, CarState, GridCell, Player, Point, Track } from 'animal-racer-shared';
+
+const props = defineProps<{
+	track: Track;
+	cars: Array<CarState>;
+	players: Array<Player>;
+	cell: GridCell;
+}>();
+
+const viewBox = computed(() => {
+	return `${props.cell.worldOffsetX} ${props.cell.worldOffsetY} ${props.cell.screenWidth} ${props.cell.screenHeight}`;
+});
+
+const lanePaths = computed(() => {
+	const paths: Array<string> = [];
+	for (let lane = 0; lane < props.track.laneCount; lane++) {
+		paths.push(buildLanePath(lane));
+	}
+	return paths;
+});
+
+function buildLanePath(lane: number): string {
+	const segments = props.track.segments;
+	const steps = 50;
+	const points: Array<Point> = [];
+
+	for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+		const seg = segments[segIdx];
+		for (let i = 0; i <= steps; i++) {
+			if (segIdx > 0 && i === 0) continue;
+			const localT = i / steps;
+			const pos = evalBezier(seg, localT);
+			const d1 = bezierDerivative1(seg, localT);
+			const angle = Math.atan2(d1.y, d1.x);
+			const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
+			const offset = (lane - (props.track.laneCount - 1) / 2) * props.track.laneWidth;
+			points.push({
+				x: pos.x + normal.x * offset,
+				y: pos.y + normal.y * offset,
+			});
+		}
+	}
+
+	if (points.length === 0) return '';
+	let d = `M ${points[0].x} ${points[0].y}`;
+	for (let i = 1; i < points.length; i++) {
+		d += ` L ${points[i].x} ${points[i].y}`;
+	}
+	return d;
+}
+
+const startLine = computed(() => {
+	const seg = props.track.segments[0];
+	if (!seg) return { x: 0, y1: 0, y2: 0 };
+	const spread = props.track.laneCount * props.track.laneWidth;
+	return {
+		x: seg.p0.x,
+		y1: seg.p0.y - spread,
+		y2: seg.p0.y + spread,
+	};
+});
+
+const finishLine = computed(() => {
+	const seg = props.track.segments[props.track.segments.length - 1];
+	if (!seg) return { x: 0, y1: 0, y2: 0 };
+	const spread = props.track.laneCount * props.track.laneWidth;
+	return {
+		x: seg.p3.x,
+		y1: seg.p3.y - spread,
+		y2: seg.p3.y + spread,
+	};
+});
+
+const carPositions = computed(() => {
+	const positions: Record<string, { x: number; y: number; angle: number }> = {};
+	for (const car of props.cars) {
+		positions[car.playerId] = getPositionOnTrack(car.t, car.lane);
+	}
+	return positions;
+});
+
+function getPositionOnTrack(globalT: number, lane: number): { x: number; y: number; angle: number } {
+	const t = Math.max(0, Math.min(1, globalT));
+	const segCount = props.track.segments.length;
+	const segFloat = t * segCount;
+	const segIdx = Math.min(Math.floor(segFloat), segCount - 1);
+	const localT = segFloat - segIdx;
+
+	const seg = props.track.segments[segIdx];
+	const pos = evalBezier(seg, localT);
+	const d1 = bezierDerivative1(seg, localT);
+	const angle = Math.atan2(d1.y, d1.x);
+	const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
+	const laneOffset = (lane - (props.track.laneCount - 1) / 2) * props.track.laneWidth;
+
+	return {
+		x: pos.x + normal.x * laneOffset,
+		y: pos.y + normal.y * laneOffset,
+		angle,
+	};
+}
+
+function getPlayerColor(id: string): string {
+	return props.players.find((p) => p.id === id)?.color ?? '#666';
+}
+
+function evalBezier(seg: BezierSegment, t: number): Point {
+	const mt = 1 - t;
+	const mt2 = mt * mt;
+	const mt3 = mt2 * mt;
+	const t2 = t * t;
+	const t3 = t2 * t;
+	return {
+		x: mt3 * seg.p0.x + 3 * mt2 * t * seg.p1.x + 3 * mt * t2 * seg.p2.x + t3 * seg.p3.x,
+		y: mt3 * seg.p0.y + 3 * mt2 * t * seg.p1.y + 3 * mt * t2 * seg.p2.y + t3 * seg.p3.y,
+	};
+}
+
+function bezierDerivative1(seg: BezierSegment, t: number): Point {
+	const mt = 1 - t;
+	return {
+		x: 3 * mt * mt * (seg.p1.x - seg.p0.x) + 6 * mt * t * (seg.p2.x - seg.p1.x) + 3 * t * t * (seg.p3.x - seg.p2.x),
+		y: 3 * mt * mt * (seg.p1.y - seg.p0.y) + 6 * mt * t * (seg.p2.y - seg.p1.y) + 3 * t * t * (seg.p3.y - seg.p2.y),
+	};
+}
+</script>
+
+<style scoped>
+.track-svg {
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+</style>

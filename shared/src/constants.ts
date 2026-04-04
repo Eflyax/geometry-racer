@@ -1,0 +1,13 @@
+export const TICK_RATE = 60;
+export const TICK_MS = 1000 / TICK_RATE;
+export const MAX_SPEED = 800;
+export const ACCEL = 600;
+export const DECEL = 400;
+export const LANE_WIDTH = 60;
+export const LANE_MARGIN = 20;
+export const MIN_CURVE_RADIUS = 120;
+export const ROOM_CODE_LENGTH = 4;
+export const ROOM_EXPIRY_MS = 30 * 60 * 1000;
+export const CAR_WIDTH = 40;
+export const CAR_HEIGHT = 20;
+export const SERVER_PORT = 3000;
