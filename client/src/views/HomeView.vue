@@ -1,6 +1,6 @@
 <template>
 	<div class="home">
-		<h1>Animal Racer</h1>
+		<h1>Geometry Racer</h1>
 
 		<div class="form">
 			<input
@@ -27,7 +27,7 @@
 			/>
 
 			<div class="btn-wrapper" :title="joinTooltip">
-				<button class="btn btn-secondary" @click="handleJoin" :disabled="!!joinTooltip">
+				<button class="btn btn-secondary" @click="handleJoin" :disabled="!!joinTooltip || joining">
 					Připojit se
 				</button>
 			</div>
@@ -49,6 +49,7 @@ const store = useGameStore();
 const playerName = ref(localStorage.getItem('playerName') ?? '');
 const joinCode = ref('');
 const error = ref('');
+const joining = ref(false);
 
 const joinTooltip = computed(() => {
 	if (!playerName.value.trim() && joinCode.value.length !== 4) return 'Zadej jméno a 4-místný kód';
@@ -81,6 +82,8 @@ async function handleCreate(): Promise<void> {
 }
 
 async function handleJoin(): Promise<void> {
+	if (joining.value) return;
+	joining.value = true;
 	try {
 		saveName();
 		await store.connect();
@@ -89,6 +92,7 @@ async function handleJoin(): Promise<void> {
 		router.push('/lobby');
 	} catch {
 		error.value = 'Nepodařilo se připojit k serveru';
+		joining.value = false;
 	}
 }
 </script>

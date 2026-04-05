@@ -6,6 +6,18 @@
 		@mousedown.prevent="store.touchStart()"
 		@mouseup.prevent="store.touchEnd()"
 	>
+		<div
+			v-if="!store.roomCode"
+			class="no-session"
+			@touchstart.stop
+			@touchend.stop
+			@mousedown.stop
+			@mouseup.stop
+		>
+			<p>Žádná aktivní hra</p>
+			<button class="btn btn-home" @click="router.push('/')">Zpět na hlavní stránku</button>
+		</div>
+
 		<TrackSvg
 			v-if="store.track && store.myCell"
 			:track="store.track"
@@ -212,6 +224,31 @@ function formatTime(ms: number): string {
 	background: linear-gradient(90deg, #4CAF50, #FFEB3B, #f44336);
 	transition: width 0.1s;
 	border-radius: 3px;
+}
+
+.no-session {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	text-align: center;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1rem;
+	color: #999;
+}
+
+.btn-home {
+	display: block;
+	padding: 12px 24px;
+	border: none;
+	border-radius: 8px;
+	font-size: 1rem;
+	font-weight: 600;
+	cursor: pointer;
+	background: linear-gradient(135deg, #3F51B5, #03A9F4);
+	color: white;
 }
 
 .btn-lobby {
