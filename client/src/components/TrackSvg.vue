@@ -83,6 +83,9 @@ const props = defineProps<{
 	cars: Array<CarState>;
 	players: Array<Player>;
 	cell: GridCell;
+	myPlayerId: string;
+	predictedCar: CarState | null;
+	renderCars: Record<string, CarState>;
 }>();
 
 const viewBox = computed(() => {
@@ -218,11 +221,15 @@ const startFinishLine = computed(() => {
 const carPositions = computed(() => {
 	const positions: Record<string, { x: number; y: number; angle: number }> = {};
 	for (const car of props.cars) {
-		if (car.derailed) {
-			positions[car.playerId] = getDerailedPosition(car.derailT, car.lane);
+		let source: CarState;
+		if (car.playerId === props.myPlayerId && props.predictedCar) {
+			source = props.predictedCar;
 		} else {
-			positions[car.playerId] = getPositionOnTrack(car.t, car.lane);
+			source = props.renderCars[car.playerId] ?? car;
 		}
+		positions[car.playerId] = source.derailed
+			? getDerailedPosition(source.derailT, source.lane)
+			: getPositionOnTrack(source.t, source.lane);
 	}
 	return positions;
 });

@@ -1,4 +1,5 @@
-import type { BezierSegment, CarState, Point, RoomConfig, Track } from 'animal-racer-shared';
+import type { BezierSegment, CarState, Point, RoomConfig, Track } from './types.js';
+
 export class Physics {
 	static updateCar(car: CarState, touching: boolean, dt: number, track: Track, config: RoomConfig): void {
 		if (car.finished) return;

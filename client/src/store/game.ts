@@ -11,6 +11,7 @@ import type {
 	Track,
 } from 'animal-racer-shared';
 import type { ServerMessage } from 'animal-racer-shared';
+import { Physics } from 'animal-racer-shared';
 import { Connection } from '@/ws/Connection';
 
 export const useGameStore = defineStore('game', () => {
@@ -37,6 +38,12 @@ export const useGameStore = defineStore('game', () => {
 	const track = ref<Track | null>(null);
 	const cars = ref<Array<CarState>>([]);
 	const rankings = ref<Array<{ playerId: string; finishTime: number }>>([]);
+
+	// Prediction state
+	const predictedCar = ref<CarState | null>(null);
+	const isTouching = ref(false);
+	const snapshots = ref<Array<{ tick: number; timestamp: number; cars: Array<CarState> }>>([]);
+	const renderTimestamp = ref(0);
 
 	const isHost = computed(() => myPlayerId.value === hostId.value);
 	const myPlayer = computed(() => players.value.find((p) => p.id === myPlayerId.value));
@@ -80,6 +87,10 @@ export const useGameStore = defineStore('game', () => {
 
 			case 'PHASE_CHANGE':
 				phase.value = msg.phase;
+				if (msg.phase === 'racing') {
+					predictedCar.value = null;
+					snapshots.value = [];
+				}
 				break;
 
 			case 'GRID_ASSIGNED':
@@ -88,9 +99,13 @@ export const useGameStore = defineStore('game', () => {
 				track.value = msg.track;
 				break;
 
-			case 'GAME_STATE':
+			case 'GAME_STATE': {
+				const now = performance.now();
+				snapshots.value = [...snapshots.value.slice(-7), { tick: msg.tick, timestamp: now, cars: msg.cars }];
 				cars.value = msg.cars;
+				reconcileOwnCar(msg.cars);
 				break;
+			}
 
 			case 'RACE_FINISHED':
 				rankings.value = msg.rankings;
@@ -102,6 +117,90 @@ export const useGameStore = defineStore('game', () => {
 				joinResolve = null;
 				joinReject = null;
 				break;
+		}
+	}
+
+	function reconcileOwnCar(serverCars: Array<CarState>): void {
+		const serverCar = serverCars.find((c) => c.playerId === myPlayerId.value);
+		if (!serverCar) return;
+
+		if (!predictedCar.value) {
+			predictedCar.value = { ...serverCar };
+			return;
+		}
+
+		const derailMismatch =
+			predictedCar.value.derailed !== serverCar.derailed ||
+			predictedCar.value.finished !== serverCar.finished;
+		const tDrift = Math.abs(predictedCar.value.t - serverCar.t);
+
+		if (derailMismatch || tDrift > 0.05) {
+			predictedCar.value = { ...serverCar };
+		}
+	}
+
+	function renderCarsAt(nowMs: number): Record<string, CarState> {
+		const renderTime = nowMs - 100;
+		const snaps = snapshots.value;
+
+		if (snaps.length < 2) {
+			return Object.fromEntries((snaps[snaps.length - 1]?.cars ?? []).map((c) => [c.playerId, c]));
+		}
+
+		let before = snaps[0];
+		let after = snaps[1];
+		for (let i = 1; i < snaps.length; i++) {
+			if (snaps[i].timestamp <= renderTime) {
+				before = snaps[i];
+				after = snaps[Math.min(i + 1, snaps.length - 1)];
+			}
+		}
+
+		const span = after.timestamp - before.timestamp;
+		const alpha = span < 1 ? 1 : Math.min((renderTime - before.timestamp) / span, 1);
+
+		const result: Record<string, CarState> = {};
+		for (const aCar of after.cars) {
+			const bCar = before.cars.find((c) => c.playerId === aCar.playerId);
+			if (!bCar || aCar.derailed || bCar.derailed) {
+				result[aCar.playerId] = aCar;
+				continue;
+			}
+			result[aCar.playerId] = {
+				...aCar,
+				t: bCar.t + (aCar.t - bCar.t) * alpha,
+				speed: bCar.speed + (aCar.speed - bCar.speed) * alpha,
+			};
+		}
+		return result;
+	}
+
+	let rafHandle = 0;
+	let lastRafTime = 0;
+
+	function startRafLoop(): void {
+		if (rafHandle) return;
+		lastRafTime = performance.now();
+
+		function frame(now: number): void {
+			const dt = Math.min((now - lastRafTime) / 1000, 0.05);
+			lastRafTime = now;
+
+			if (phase.value === 'racing' && track.value && predictedCar.value && !predictedCar.value.finished) {
+				Physics.updateCar(predictedCar.value, isTouching.value, dt, track.value, config.value);
+			}
+
+			renderTimestamp.value = now;
+			rafHandle = requestAnimationFrame(frame);
+		}
+
+		rafHandle = requestAnimationFrame(frame);
+	}
+
+	function stopRafLoop(): void {
+		if (rafHandle) {
+			cancelAnimationFrame(rafHandle);
+			rafHandle = 0;
 		}
 	}
 
@@ -152,10 +251,12 @@ export const useGameStore = defineStore('game', () => {
 	}
 
 	function touchStart(): void {
+		isTouching.value = true;
 		send({ type: 'TOUCH_START' });
 	}
 
 	function touchEnd(): void {
+		isTouching.value = false;
 		send({ type: 'TOUCH_END' });
 	}
 
@@ -195,6 +296,8 @@ export const useGameStore = defineStore('game', () => {
 		track,
 		cars,
 		rankings,
+		predictedCar,
+		renderTimestamp,
 		isHost,
 		myPlayer,
 		myCar,
@@ -211,5 +314,8 @@ export const useGameStore = defineStore('game', () => {
 		devRestart,
 		sendScreenInfo,
 		disconnect,
+		startRafLoop,
+		stopRafLoop,
+		renderCarsAt,
 	};
 });

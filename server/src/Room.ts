@@ -8,11 +8,10 @@ import type {
 	RoomState,
 	Track,
 } from 'animal-racer-shared';
-import { PLAYER_COLORS, TICK_MS } from 'animal-racer-shared';
+import { PLAYER_COLORS, TICK_MS, Physics } from 'animal-racer-shared';
 import type { ClientMessage, ServerMessage } from 'animal-racer-shared';
 import { PairingManager } from './PairingManager.js';
 import { TrackGenerator } from './TrackGenerator.js';
-import { Physics } from './Physics.js';
 
 interface ConnectedPlayer {
 	player: Player;
@@ -44,6 +43,7 @@ export class Room {
 	private track: Track | null = null;
 	private cars: Array<CarState> = [];
 	private gameInterval: ReturnType<typeof setInterval> | null = null;
+	private lastTickTime = 0;
 	private tick = 0;
 	private raceStartTime = 0;
 
@@ -241,13 +241,16 @@ export class Room {
 
 		this.broadcast({ type: 'PHASE_CHANGE', phase: 'racing' });
 
+		this.lastTickTime = performance.now();
 		this.gameInterval = setInterval(() => this.gameTick(), TICK_MS);
 	}
 
 	private gameTick(): void {
 		if (!this.track) return;
 		this.tick++;
-		const dt = TICK_MS / 1000;
+		const now = performance.now();
+		const dt = Math.min((now - this.lastTickTime) / 1000, (TICK_MS * 3) / 1000);
+		this.lastTickTime = now;
 
 		for (const car of this.cars) {
 			if (car.finished) continue;

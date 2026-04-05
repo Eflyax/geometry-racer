@@ -24,6 +24,9 @@
 			:cars="store.cars"
 			:players="store.players"
 			:cell="store.myCell"
+			:myPlayerId="store.myPlayerId"
+			:predictedCar="store.predictedCar"
+			:renderCars="renderCars"
 		/>
 
 		<div
@@ -95,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '@/store/game';
 import TrackSvg from '@/components/TrackSvg.vue';
@@ -108,20 +111,29 @@ const isDevPlayer = computed(() => {
 });
 
 watch(() => store.phase, (p) => {
-	if (p === 'lobby') {
-		router.push('/lobby');
+	if (p === 'racing') {
+		store.startRafLoop();
+	} else {
+		store.stopRafLoop();
+		if (p === 'lobby') router.push('/lobby');
 	}
-});
+}, { immediate: true });
+
+onUnmounted(() => store.stopRafLoop());
 
 const speedPercent = computed(() => {
-	if (!store.myCar) return 0;
-	return (store.myCar.speed / store.config.maxSpeed) * 100;
+	const car = store.predictedCar ?? store.myCar;
+	if (!car) return 0;
+	return (car.speed / store.config.maxSpeed) * 100;
 });
 
 const penaltyRatio = computed(() => {
-	if (!store.myCar?.derailed) return 0;
-	return Math.max(0, store.myCar.penaltyRemaining / store.config.penaltyDuration);
+	const car = store.predictedCar ?? store.myCar;
+	if (!car?.derailed) return 0;
+	return Math.max(0, car.penaltyRemaining / store.config.penaltyDuration);
 });
+
+const renderCars = computed(() => store.renderCarsAt(store.renderTimestamp));
 
 function getPlayerName(id: string): string {
 	return store.players.find((p) => p.id === id)?.name ?? '?';
