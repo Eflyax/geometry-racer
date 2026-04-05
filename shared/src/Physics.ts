@@ -24,16 +24,20 @@ export class Physics {
 		if (car.speed > 0) {
 			const deltaArc = car.speed * dt;
 			const deltaT = deltaArc / track.totalArcLength;
+			const prevT = car.t % 1;
 			car.t += deltaT;
 
-			// Curvature check uses t modulo 1 (position on the loop)
-			const trackT = car.t % 1;
-			const rawCurvature = this.getCurvature(trackT, track);
-			// Cap curvature to avoid extreme spikes at bezier junctions
-			const curvature = Math.min(rawCurvature, 2.0);
-			if (curvature > 0.01) {
-				// sqrt formula: physically correct (centripetal force = v²·κ)
-				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(40000 / curvature);
+			// Sample curvature at 25% and 75% of the traversed arc to avoid
+			// landing exactly on Bezier segment junctions (where d2 is discontinuous).
+			const k1 = this.getCurvature((prevT + deltaT * 0.25) % 1, track);
+			const k2 = this.getCurvature((prevT + deltaT * 0.75) % 1, track);
+			// Cap at R=10px to prevent residual junction spikes from dominating.
+			const curvature = Math.min(Math.max(k1, k2), 0.1);
+
+			if (curvature > 0.001) {
+				// K=3600 → derailment threshold at v=600 (maxSpeed) for R=100px curve.
+				// maxSafeSpeed = coeff * sqrt(3600 / κ),  min safe radius = 100/coeff² px
+				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(3600 / curvature);
 				if (car.speed > maxSafeSpeed) {
 					car.derailed = true;
 					car.derailT = car.t;
