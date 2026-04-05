@@ -218,10 +218,38 @@ const startFinishLine = computed(() => {
 const carPositions = computed(() => {
 	const positions: Record<string, { x: number; y: number; angle: number }> = {};
 	for (const car of props.cars) {
-		positions[car.playerId] = getPositionOnTrack(car.t, car.lane);
+		if (car.derailed) {
+			positions[car.playerId] = getDerailedPosition(car.derailT, car.lane);
+		} else {
+			positions[car.playerId] = getPositionOnTrack(car.t, car.lane);
+		}
 	}
 	return positions;
 });
+
+function getDerailedPosition(derailT: number, lane: number): { x: number; y: number; angle: number } {
+	const base = getPositionOnTrack(derailT, lane);
+
+	// Deterministic pseudo-random from derailT + lane — same result on all clients
+	const h1 = Math.sin(derailT * 9301.0 + lane * 4967.0);
+	const h2 = Math.sin(derailT * 6271.0 + lane * 3491.0 + 1.0);
+
+	// Perpendicular offset: 1.5–3× car size (car = 24 units)
+	const sign = h1 >= 0 ? 1 : -1;
+	const offsetNormal = sign * 24 * (1.5 + Math.abs(h1) * 1.5);
+
+	const nx = -Math.sin(base.angle);
+	const ny = Math.cos(base.angle);
+
+	// Spin: ±60°–150° from track direction
+	const spin = sign * (Math.PI / 3 + Math.abs(h2) * (Math.PI * 5 / 6));
+
+	return {
+		x: base.x + nx * offsetNormal,
+		y: base.y + ny * offsetNormal,
+		angle: base.angle + spin,
+	};
+}
 
 function getPositionOnTrack(globalT: number, lane: number): { x: number; y: number; angle: number } {
 	const t = Math.max(0, Math.min(1, globalT % 1 || (globalT >= 1 ? 1 : 0)));

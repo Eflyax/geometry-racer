@@ -26,10 +26,11 @@
 			:cell="store.myCell"
 		/>
 
-		<div v-if="store.myCar?.derailed" class="penalty-overlay">
-			<p>Vykolejení!</p>
-			<p class="penalty-time">{{ Math.ceil((store.myCar.penaltyRemaining) / 1000) }}s</p>
-		</div>
+		<div
+			v-if="store.myCar?.derailed"
+			class="penalty-border"
+			:style="{ '--penalty-ratio': penaltyRatio }"
+		/>
 
 		<div
 			v-if="store.phase === 'finished'"
@@ -117,6 +118,11 @@ const speedPercent = computed(() => {
 	return (store.myCar.speed / store.config.maxSpeed) * 100;
 });
 
+const penaltyRatio = computed(() => {
+	if (!store.myCar?.derailed) return 0;
+	return Math.max(0, store.myCar.penaltyRemaining / store.config.penaltyDuration);
+});
+
 function getPlayerName(id: string): string {
 	return store.players.find((p) => p.id === id)?.name ?? '?';
 }
@@ -144,23 +150,17 @@ function formatTime(ms: number): string {
 	-webkit-user-select: none;
 }
 
-.penalty-overlay {
+.penalty-border {
 	position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	text-align: center;
-	color: #f44336;
-	font-size: 1.5rem;
-	font-weight: bold;
-	background: rgba(0, 0, 0, 0.7);
-	padding: 20px 40px;
-	border-radius: 12px;
+	inset: 0;
 	pointer-events: none;
+	box-shadow: inset 0 0 80px 20px #f44336;
+	animation: penalty-pulse 0.8s ease-in-out infinite;
 }
 
-.penalty-time {
-	font-size: 3rem;
+@keyframes penalty-pulse {
+	0%, 100% { opacity: var(--penalty-ratio); }
+	50% { opacity: calc(var(--penalty-ratio) * 0.25); }
 }
 
 .results-overlay {
