@@ -175,11 +175,12 @@ export class Room {
 
 	private startMeasuring(): void {
 		this.phase = 'measuring';
-		this.broadcast({ type: 'PHASE_CHANGE', phase: 'measuring' });
 
-		if (this.allScreensReported()) {
-			this.startPairing();
+		for (const cp of this.players.values()) {
+			cp.player.screen = null;
 		}
+
+		this.broadcast({ type: 'PHASE_CHANGE', phase: 'measuring' });
 	}
 
 	private allScreensReported(): boolean {
