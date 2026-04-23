@@ -26,21 +26,20 @@ export interface PairingEdge {
 	neighborPlayerId: string;
 }
 
-export interface BezierSegment {
-	p0: Point;
-	p1: Point;
-	p2: Point;
-	p3: Point;
-	arcLength: number;
+export interface Waypoint {
+	x: number;
+	y: number;
+	angle: number;
+	curvature: number;
+	cumulativeLength: number;
 }
 
 export interface Track {
-	segments: Array<BezierSegment>;
+	waypoints: Array<Waypoint>;
 	totalArcLength: number;
 	laneCount: number;
 	laneWidth: number;
 	worldBounds: { width: number; height: number };
-	arcLengthLUT: Array<{ t: number; length: number }>;
 }
 
 export interface CarState {
