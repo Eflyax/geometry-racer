@@ -1,8 +1,17 @@
-import type { BezierSegment, Point, Track } from 'animal-racer-shared';
+import type { Point, Track, Waypoint } from 'animal-racer-shared';
 import { LANE_WIDTH } from 'animal-racer-shared';
 
 const MAX_TURN_DEG = 120;
 const MAX_TURN_RAD = MAX_TURN_DEG * Math.PI / 180;
+const WAYPOINT_SPACING = 5;
+
+interface BezierSegment {
+	p0: Point;
+	p1: Point;
+	p2: Point;
+	p3: Point;
+	arcLength: number;
+}
 
 export class TrackGenerator {
 	private margin = 0;
@@ -15,17 +24,73 @@ export class TrackGenerator {
 		this.margin = 30 + LANE_WIDTH * laneCount;
 
 		const segments = this.generateClosedLoop(wiggliness);
-		const arcLengthLUT = this.buildArcLengthLUT(segments);
-		const totalArcLength = arcLengthLUT[arcLengthLUT.length - 1]?.length ?? 0;
+		const lut = this.buildArcLengthLUT(segments);
+		const totalArcLength = lut[lut.length - 1]?.length ?? 0;
+		const waypoints = this.sampleWaypoints(segments, lut, totalArcLength);
 
 		return {
-			segments,
+			waypoints,
 			totalArcLength,
 			laneCount,
 			laneWidth: LANE_WIDTH,
 			worldBounds: { width: worldWidth, height: worldHeight },
-			arcLengthLUT,
 		};
+	}
+
+	private sampleWaypoints(
+		segments: Array<BezierSegment>,
+		lut: Array<{ t: number; length: number }>,
+		totalArcLength: number,
+	): Array<Waypoint> {
+		const count = Math.max(8, Math.round(totalArcLength / WAYPOINT_SPACING));
+		const pts: Array<{ x: number; y: number }> = [];
+
+		for (let i = 0; i < count; i++) {
+			const targetLen = (i / count) * totalArcLength;
+			const globalT = this.lutLengthToT(lut, targetLen);
+			const segCount = segments.length;
+			const segFloat = globalT * segCount;
+			const segIdx = Math.min(Math.floor(segFloat), segCount - 1);
+			const localT = segFloat - segIdx;
+			pts.push(this.evalBezier(segments[segIdx].p0, segments[segIdx].p1, segments[segIdx].p2, segments[segIdx].p3, localT));
+		}
+
+		const waypoints: Array<Waypoint> = pts.map((pt, i) => {
+			const next = pts[(i + 1) % pts.length];
+			return {
+				x: pt.x,
+				y: pt.y,
+				angle: Math.atan2(next.y - pt.y, next.x - pt.x),
+				curvature: 0,
+				cumulativeLength: (i / count) * totalArcLength,
+			};
+		});
+
+		for (let i = 0; i < waypoints.length; i++) {
+			const prev = waypoints[(i - 1 + waypoints.length) % waypoints.length];
+			const next = waypoints[(i + 1) % waypoints.length];
+			let da = next.angle - prev.angle;
+			while (da > Math.PI) { da -= 2 * Math.PI; }
+			while (da < -Math.PI) { da += 2 * Math.PI; }
+			waypoints[i].curvature = Math.abs(da) / (2 * WAYPOINT_SPACING);
+		}
+
+		return waypoints;
+	}
+
+	private lutLengthToT(lut: Array<{ t: number; length: number }>, targetLen: number): number {
+		if (lut.length < 2) return 0;
+		let lo = 0;
+		let hi = lut.length - 1;
+		while (lo < hi - 1) {
+			const mid = (lo + hi) >> 1;
+			if (lut[mid].length < targetLen) { lo = mid; }
+			else { hi = mid; }
+		}
+		const segLen = lut[hi].length - lut[lo].length;
+		if (segLen < 1e-6) return lut[lo].t;
+		const frac = (targetLen - lut[lo].length) / segLen;
+		return lut[lo].t + (lut[hi].t - lut[lo].t) * frac;
 	}
 
 	private generateClosedLoop(wiggliness: number): Array<BezierSegment> {
@@ -39,33 +104,27 @@ export class TrackGenerator {
 		const halfW = (right - left) / 2;
 		const halfH = (bottom - top) / 2;
 
-		// Points per side: 3 (w=0) to 7 (w=1)
 		const perSide = Math.round(3 + w * 4) + Math.floor(Math.random() * 2);
 
 		const waypoints: Array<Point> = [];
 
-		// Max inward offset: 10% (smooth) to 80% (wiggly) of half-dimension
 		const maxInwardFrac = 0.1 + w * 0.7;
 
-		// Top edge (left → right)
 		for (let i = 0; i < perSide; i++) {
 			const frac = (i + 0.5) / perSide;
 			const inward = Math.random() * maxInwardFrac * halfH;
 			waypoints.push({ x: left + (right - left) * frac, y: top + inward });
 		}
-		// Right edge (top → bottom)
 		for (let i = 0; i < perSide; i++) {
 			const frac = (i + 0.5) / perSide;
 			const inward = Math.random() * maxInwardFrac * halfW;
 			waypoints.push({ x: right - inward, y: top + (bottom - top) * frac });
 		}
-		// Bottom edge (right → left)
 		for (let i = 0; i < perSide; i++) {
 			const frac = 1 - (i + 0.5) / perSide;
 			const inward = Math.random() * maxInwardFrac * halfH;
 			waypoints.push({ x: left + (right - left) * frac, y: bottom - inward });
 		}
-		// Left edge (bottom → top)
 		for (let i = 0; i < perSide; i++) {
 			const frac = 1 - (i + 0.5) / perSide;
 			const inward = Math.random() * maxInwardFrac * halfW;
@@ -74,10 +133,8 @@ export class TrackGenerator {
 
 		this.clampPoints(waypoints);
 
-		// Smooth sharp turns (clamped within bounds)
 		const smoothed = this.smoothSharpTurns(waypoints);
 
-		// Insert equalizer loop at the longest gap
 		let bestIdx = 0;
 		let bestDist = 0;
 		for (let i = 0; i < smoothed.length; i++) {
@@ -112,8 +169,6 @@ export class TrackGenerator {
 	private smoothSharpTurns(waypoints: Array<Point>): Array<Point> {
 		const pts = [...waypoints];
 
-		// Push sharp vertices toward the midpoint of their neighbours
-		// (softens the angle without moving points out of bounds)
 		for (let iter = 0; iter < 30; iter++) {
 			let anySharp = false;
 
@@ -125,7 +180,6 @@ export class TrackGenerator {
 
 				if (angle > MAX_TURN_RAD) {
 					anySharp = true;
-					// Move curr toward the midpoint of prev-nxt (softens the bend)
 					const midX = (prev.x + nxt.x) / 2;
 					const midY = (prev.y + nxt.y) / 2;
 					pts[i] = {
@@ -295,7 +349,7 @@ export class TrackGenerator {
 		};
 	}
 
-	buildArcLengthLUT(segments: Array<BezierSegment>): Array<{ t: number; length: number }> {
+	private buildArcLengthLUT(segments: Array<BezierSegment>): Array<{ t: number; length: number }> {
 		const samplesPerSeg = 100;
 		const lut: Array<{ t: number; length: number }> = [{ t: 0, length: 0 }];
 		let cumLength = 0;

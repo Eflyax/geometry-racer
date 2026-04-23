@@ -1,4 +1,4 @@
-import type { BezierSegment, CarState, Point, RoomConfig, Track } from './types.js';
+import type { CarState, RoomConfig, Track } from './types.js';
 
 export class Physics {
 	static updateCar(car: CarState, touching: boolean, dt: number, track: Track, config: RoomConfig): void {
@@ -22,22 +22,15 @@ export class Physics {
 		}
 
 		if (car.speed > 0) {
-			const deltaArc = car.speed * dt;
-			const deltaT = deltaArc / track.totalArcLength;
-			const prevT = car.t % 1;
-			car.t += deltaT;
+			car.t += (car.speed * dt) / track.totalArcLength;
 
-			// Sample curvature at 25% and 75% of the traversed arc to avoid
-			// landing exactly on Bezier segment junctions (where d2 is discontinuous).
-			const k1 = this.getCurvature((prevT + deltaT * 0.25) % 1, track);
-			const k2 = this.getCurvature((prevT + deltaT * 0.75) % 1, track);
-			// Cap at R=10px to prevent residual junction spikes from dominating.
-			const curvature = Math.min(Math.max(k1, k2), 0.1);
+			const waypointCount = track.waypoints.length;
+			const currentIdx = Math.floor((car.t % 1) * waypointCount) % waypointCount;
+			const waypointSpacing = track.totalArcLength / waypointCount;
 
-			if (curvature > 0.001) {
-				// K=3600 → derailment threshold at v=600 (maxSpeed) for R=100px curve.
-				// maxSafeSpeed = coeff * sqrt(3600 / κ),  min safe radius = 100/coeff² px
-				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(3600 / curvature);
+			const currentCurvature = track.waypoints[currentIdx].curvature;
+			if (currentCurvature > 0.001) {
+				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(3600 / currentCurvature);
 				if (car.speed > maxSafeSpeed) {
 					car.derailed = true;
 					car.derailT = car.t;
@@ -45,88 +38,42 @@ export class Physics {
 					return;
 				}
 			}
+
+			const lookAheadCount = Math.ceil((car.speed * 0.3) / waypointSpacing);
+			let maxUpcomingCurvature = 0;
+			for (let i = 1; i <= lookAheadCount; i++) {
+				const idx = (currentIdx + i) % waypointCount;
+				if (track.waypoints[idx].curvature > maxUpcomingCurvature) {
+					maxUpcomingCurvature = track.waypoints[idx].curvature;
+				}
+			}
+
+			if (maxUpcomingCurvature > 0.001) {
+				const maxSafeAhead = config.derailmentCoefficient * Math.sqrt(3600 / maxUpcomingCurvature);
+				if (car.speed > maxSafeAhead) {
+					car.speed = Math.max(maxSafeAhead, car.speed - config.decel * 3 * dt);
+				}
+			}
 		}
 
-		const targetLaps = config.laps;
-		if (car.t >= targetLaps) {
-			car.t = targetLaps;
+		if (car.t >= config.laps) {
+			car.t = config.laps;
 			car.finished = true;
 			car.finishTime = Date.now();
 			car.speed = 0;
 		}
 	}
 
-	static getCurvature(globalT: number, track: Track): number {
-		const t = Math.max(0, Math.min(1, globalT));
-		const segCount = track.segments.length;
-		const segFloat = t * segCount;
-		const segIdx = Math.min(Math.floor(segFloat), segCount - 1);
-		const localT = segFloat - segIdx;
-
-		const seg = track.segments[segIdx];
-		return this.bezierCurvature(seg, localT);
-	}
-
-	static bezierCurvature(seg: BezierSegment, t: number): number {
-		const d1 = this.bezierDerivative1(seg, t);
-		const d2 = this.bezierDerivative2(seg, t);
-
-		const cross = d1.x * d2.y - d1.y * d2.x;
-		const dMag = Math.sqrt(d1.x * d1.x + d1.y * d1.y);
-
-		if (dMag < 1e-6) return 0;
-
-		return Math.abs(cross) / (dMag * dMag * dMag);
-	}
-
-	static bezierDerivative1(seg: BezierSegment, t: number): Point {
-		const mt = 1 - t;
-		return {
-			x: 3 * mt * mt * (seg.p1.x - seg.p0.x) + 6 * mt * t * (seg.p2.x - seg.p1.x) + 3 * t * t * (seg.p3.x - seg.p2.x),
-			y: 3 * mt * mt * (seg.p1.y - seg.p0.y) + 6 * mt * t * (seg.p2.y - seg.p1.y) + 3 * t * t * (seg.p3.y - seg.p2.y),
-		};
-	}
-
-	static bezierDerivative2(seg: BezierSegment, t: number): Point {
-		return {
-			x: 6 * (1 - t) * (seg.p2.x - 2 * seg.p1.x + seg.p0.x) + 6 * t * (seg.p3.x - 2 * seg.p2.x + seg.p1.x),
-			y: 6 * (1 - t) * (seg.p2.y - 2 * seg.p1.y + seg.p0.y) + 6 * t * (seg.p3.y - 2 * seg.p2.y + seg.p1.y),
-		};
-	}
-
 	static getPositionOnTrack(globalT: number, lane: number, track: Track): { x: number; y: number; angle: number } {
-		const t = Math.max(0, Math.min(1, globalT));
-		const segCount = track.segments.length;
-		const segFloat = t * segCount;
-		const segIdx = Math.min(Math.floor(segFloat), segCount - 1);
-		const localT = segFloat - segIdx;
-
-		const seg = track.segments[segIdx];
-		const pos = this.evalBezier(seg, localT);
-		const d1 = this.bezierDerivative1(seg, localT);
-
-		const angle = Math.atan2(d1.y, d1.x);
-		const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
-
+		const wrapped = globalT % 1;
+		const t = wrapped < 0 ? wrapped + 1 : wrapped;
+		const idx = Math.floor(t * track.waypoints.length) % track.waypoints.length;
+		const wp = track.waypoints[idx];
 		const laneOffset = (lane - (track.laneCount - 1) / 2) * track.laneWidth;
-
 		return {
-			x: pos.x + normal.x * laneOffset,
-			y: pos.y + normal.y * laneOffset,
-			angle,
-		};
-	}
-
-	static evalBezier(seg: BezierSegment, t: number): Point {
-		const mt = 1 - t;
-		const mt2 = mt * mt;
-		const mt3 = mt2 * mt;
-		const t2 = t * t;
-		const t3 = t2 * t;
-
-		return {
-			x: mt3 * seg.p0.x + 3 * mt2 * t * seg.p1.x + 3 * mt * t2 * seg.p2.x + t3 * seg.p3.x,
-			y: mt3 * seg.p0.y + 3 * mt2 * t * seg.p1.y + 3 * mt * t2 * seg.p2.y + t3 * seg.p3.y,
+			x: wp.x - Math.sin(wp.angle) * laneOffset,
+			y: wp.y + Math.cos(wp.angle) * laneOffset,
+			angle: wp.angle,
 		};
 	}
 }
