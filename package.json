@@ -15,5 +15,9 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.59.1"
+	},
+	"dependencies": {
+		"tsc": "^2.0.4",
+		"typescript": "^6.0.3"
 	}
 }
