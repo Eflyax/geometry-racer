@@ -31,9 +31,9 @@ export class Room {
 		wiggliness: 50,
 		devMode: false,
 		laps: 1,
-		accel: 180,
-		maxSpeed: 600,
-		decel: 400,
+		accel: 300,
+		maxSpeed: 900,
+		decel: 300,
 	};
 	lastActivity = Date.now();
 
@@ -65,7 +65,7 @@ export class Room {
 			id,
 			name,
 			color,
-			lane: this.players.size,
+			lane: 0,
 			screen: null,
 			pairingConfirmed: false,
 		};
@@ -198,7 +198,7 @@ export class Room {
 		this.grid = pairing.grid;
 
 		const trackGen = new TrackGenerator();
-		this.track = trackGen.generate(pairing.worldWidth, pairing.worldHeight, playerList.length, this.config.wiggliness);
+		this.track = trackGen.generate(pairing.safeWidth, pairing.safeHeight, this.config.wiggliness);
 
 		for (const cp of this.players.values()) {
 			const cell = this.grid.find((c) => c.playerId === cp.player.id);
@@ -238,6 +238,7 @@ export class Room {
 			derailT: 0,
 			finished: false,
 			finishTime: null,
+			overload: 0,
 		}));
 
 		this.broadcast({ type: 'PHASE_CHANGE', phase: 'racing' });
@@ -298,7 +299,7 @@ export class Room {
 		this.grid = pairing.grid;
 
 		const trackGen = new TrackGenerator();
-		this.track = trackGen.generate(pairing.worldWidth, pairing.worldHeight, playerList.length, this.config.wiggliness);
+		this.track = trackGen.generate(pairing.safeWidth, pairing.safeHeight, this.config.wiggliness);
 
 		// Send new grid + track to all clients
 		for (const cp of this.players.values()) {

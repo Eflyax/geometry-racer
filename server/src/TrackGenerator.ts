@@ -1,18 +1,31 @@
 import type { BezierSegment, Point, Track } from 'animal-racer-shared';
-import { LANE_WIDTH } from 'animal-racer-shared';
+import { LANE_WIDTH, MIN_CURVE_RADIUS } from 'animal-racer-shared';
 
 const MAX_TURN_DEG = 120;
 const MAX_TURN_RAD = MAX_TURN_DEG * Math.PI / 180;
+
+// Single shared lane regardless of player count. Margin keeps the track
+// (plus start/finish line and direction arrows, which extend ~LANE_WIDTH
+// beyond the centerline) safely inside the generation bounds.
+const LANE_COUNT = 1;
+const TRACK_MARGIN = 30 + LANE_WIDTH;
 
 export class TrackGenerator {
 	private margin = 0;
 	private worldWidth = 0;
 	private worldHeight = 0;
 
-	generate(worldWidth: number, worldHeight: number, laneCount: number, wiggliness: number = 50): Track {
+	/**
+	 * Generates a closed-loop track inside [0, 0, worldWidth, worldHeight].
+	 *
+	 * The bounds must describe a region fully covered by the paired devices
+	 * (see PairingManager.safeWidth / safeHeight); the loop only ever bends
+	 * inward from this rectangle, so it can never land off-screen.
+	 */
+	generate(worldWidth: number, worldHeight: number, wiggliness: number = 50): Track {
 		this.worldWidth = worldWidth;
 		this.worldHeight = worldHeight;
-		this.margin = 30 + LANE_WIDTH * laneCount;
+		this.margin = TRACK_MARGIN;
 
 		const segments = this.generateClosedLoop(wiggliness);
 		const arcLengthLUT = this.buildArcLengthLUT(segments);
@@ -21,7 +34,7 @@ export class TrackGenerator {
 		return {
 			segments,
 			totalArcLength,
-			laneCount,
+			laneCount: LANE_COUNT,
 			laneWidth: LANE_WIDTH,
 			worldBounds: { width: worldWidth, height: worldHeight },
 			arcLengthLUT,
@@ -98,7 +111,138 @@ export class TrackGenerator {
 		const after = smoothed.slice(bestIdx + 1);
 		const allWaypoints = [...before, ...eqWaypoints, ...after];
 
-		return this.waypointsToClosedBezier(allWaypoints);
+		// Round off any waypoint whose turn radius is below MIN_CURVE_RADIUS before
+		// fitting the Bézier, so the final track has no corner sharper than the
+		// design minimum. Densifying first gives the relaxation evenly spaced points
+		// to work with (the raw waypoints vary wildly in spacing); it is a one-way
+		// resample — the smooth Bézier is rebuilt from the rounded result.
+		const dense = this.resampleClosed(allWaypoints, MIN_CURVE_RADIUS * 0.5);
+		const rounded = this.enforceMinRadius(dense);
+
+		return this.waypointsToClosedBezier(rounded);
+	}
+
+	// Resamples a closed polyline into roughly equidistant points so the follow-up
+	// smoothing and Bézier handles behave uniformly around the loop.
+	private resampleClosed(points: Array<Point>, spacing: number): Array<Point> {
+		const n = points.length;
+		if (n < 3) return points.map((p) => ({ ...p }));
+
+		const segLen: Array<number> = [];
+		let total = 0;
+		for (let i = 0; i < n; i++) {
+			const a = points[i];
+			const b = points[(i + 1) % n];
+			const d = Math.hypot(b.x - a.x, b.y - a.y);
+			segLen.push(d);
+			total += d;
+		}
+		if (total < 1e-6) return points.map((p) => ({ ...p }));
+
+		const count = Math.max(16, Math.round(total / spacing));
+		const step = total / count;
+		const out: Array<Point> = [];
+		let segIdx = 0;
+		let segStart = 0;
+
+		for (let i = 0; i < count; i++) {
+			const target = i * step;
+			while (segIdx < n - 1 && segStart + segLen[segIdx] < target) {
+				segStart += segLen[segIdx];
+				segIdx++;
+			}
+			const a = points[segIdx];
+			const b = points[(segIdx + 1) % n];
+			const frac = segLen[segIdx] > 1e-9 ? (target - segStart) / segLen[segIdx] : 0;
+			out.push({ x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac });
+		}
+
+		return out;
+	}
+
+	// Constrained smoothing: each iteration nudges only the vertices whose turn radius
+	// is below MIN_CURVE_RADIUS toward the midpoint of their neighbours (flattening the
+	// bend raises its radius), leaving already-gentle sections untouched. Laplacian
+	// smoothing of a closed loop shrinks it (curve-shortening flow), so after each pass
+	// the loop is re-inflated about its centroid back to its original bounding box —
+	// this rounds off sharp corners without collapsing the track.
+	private enforceMinRadius(points: Array<Point>): Array<Point> {
+		const pts = points.map((p) => ({ ...p }));
+		const n = pts.length;
+		if (n < 5) return pts;
+
+		const minR = MIN_CURVE_RADIUS;
+		const relax = 0.3;
+		const maxIterations = 160;
+		const target = this.bbox(pts);
+
+		for (let iter = 0; iter < maxIterations; iter++) {
+			const dx = new Array<number>(n).fill(0);
+			const dy = new Array<number>(n).fill(0);
+			let worst = 0;
+
+			for (let i = 0; i < n; i++) {
+				const prev = pts[(i - 1 + n) % n];
+				const curr = pts[i];
+				const next = pts[(i + 1) % n];
+				const r = this.circumRadius(prev, curr, next);
+				if (r < minR) {
+					const w = relax * Math.min(1, (minR - r) / minR);
+					dx[i] = ((prev.x + next.x) / 2 - curr.x) * w;
+					dy[i] = ((prev.y + next.y) / 2 - curr.y) * w;
+					if (minR - r > worst) worst = minR - r;
+				}
+			}
+
+			for (let i = 0; i < n; i++) {
+				pts[i].x += dx[i];
+				pts[i].y += dy[i];
+			}
+
+			this.reinflate(pts, target);
+			this.clampPoints(pts);
+
+			if (worst < 0.5) break;
+		}
+
+		return pts;
+	}
+
+	private bbox(pts: Array<Point>): { cx: number; cy: number; w: number; h: number } {
+		let minX = Infinity;
+		let minY = Infinity;
+		let maxX = -Infinity;
+		let maxY = -Infinity;
+		for (const p of pts) {
+			if (p.x < minX) minX = p.x;
+			if (p.x > maxX) maxX = p.x;
+			if (p.y < minY) minY = p.y;
+			if (p.y > maxY) maxY = p.y;
+		}
+		return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY };
+	}
+
+	// Scales the loop about its centroid so its bounding box matches `target` again,
+	// undoing the shrinkage of the smoothing pass. Only ever grows (never shrinks),
+	// so a rounded corner stays rounded.
+	private reinflate(pts: Array<Point>, target: { cx: number; cy: number; w: number; h: number }): void {
+		const now = this.bbox(pts);
+		const sx = now.w > 1e-6 ? Math.max(1, target.w / now.w) : 1;
+		const sy = now.h > 1e-6 ? Math.max(1, target.h / now.h) : 1;
+		for (const p of pts) {
+			p.x = now.cx + (p.x - now.cx) * sx;
+			p.y = now.cy + (p.y - now.cy) * sy;
+		}
+	}
+
+	// Radius of the circle through three points (Infinity if they are collinear).
+	private circumRadius(a: Point, b: Point, c: Point): number {
+		const ab = Math.hypot(b.x - a.x, b.y - a.y);
+		const bc = Math.hypot(c.x - b.x, c.y - b.y);
+		const ca = Math.hypot(a.x - c.x, a.y - c.y);
+		const area2 = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+		if (area2 < 1e-9) return Infinity;
+		return (ab * bc * ca) / (2 * area2);
 	}
 
 	private clampPoints(pts: Array<Point>): void {
@@ -174,7 +318,7 @@ export class TrackGenerator {
 		const inwardSign = dot > 0 ? 1 : -1;
 
 		const minDim = Math.min(worldWidth, worldHeight);
-		const loopRadius = Math.max(minDim * 0.12, 80);
+		const loopRadius = Math.max(minDim * 0.12, MIN_CURVE_RADIUS * 1.1);
 
 		const loopCX = Math.max(margin + loopRadius, Math.min(worldWidth - margin - loopRadius,
 			midX + perpX * inwardSign * loopRadius * 1.8));
@@ -198,41 +342,15 @@ export class TrackGenerator {
 	private waypointsToClosedBezier(waypoints: Array<Point>): Array<BezierSegment> {
 		const n = waypoints.length;
 
-		const tangentDirs: Array<Point> = [];
+		// Uniform Catmull-Rom tangents. Both Bézier segments meeting at a waypoint
+		// share this one tangent vector, giving C1 continuity (matching derivatives,
+		// not just directions) — so curvature is continuous across junctions and no
+		// spurious curvature spikes appear where segments meet.
+		const tangents: Array<Point> = [];
 		for (let i = 0; i < n; i++) {
 			const prev = waypoints[(i - 1 + n) % n];
-			const curr = waypoints[i];
 			const next = waypoints[(i + 1) % n];
-
-			const inDist = Math.hypot(curr.x - prev.x, curr.y - prev.y);
-			const outDist = Math.hypot(next.x - curr.x, next.y - curr.y);
-
-			const inDir = inDist > 0
-				? { x: (curr.x - prev.x) / inDist, y: (curr.y - prev.y) / inDist }
-				: { x: 0, y: 0 };
-			const outDir = outDist > 0
-				? { x: (next.x - curr.x) / outDist, y: (next.y - curr.y) / outDist }
-				: { x: 0, y: 0 };
-
-			let tx = inDir.x + outDir.x;
-			let ty = inDir.y + outDir.y;
-			const tLen = Math.hypot(tx, ty);
-			if (tLen > 0.1) {
-				tx /= tLen;
-				ty /= tLen;
-			} else {
-				tx = outDir.x;
-				ty = outDir.y;
-			}
-
-			tangentDirs.push({ x: tx, y: ty });
-		}
-
-		const edgeLens: Array<number> = [];
-		for (let i = 0; i < n; i++) {
-			const a = waypoints[i];
-			const b = waypoints[(i + 1) % n];
-			edgeLens.push(Math.hypot(b.x - a.x, b.y - a.y));
+			tangents.push({ x: (next.x - prev.x) / 2, y: (next.y - prev.y) / 2 });
 		}
 
 		const segments: Array<BezierSegment> = [];
@@ -240,22 +358,16 @@ export class TrackGenerator {
 		for (let i = 0; i < n; i++) {
 			const p0 = waypoints[i];
 			const p3 = waypoints[(i + 1) % n];
-			const segDist = edgeLens[i];
-
-			const prevLen = edgeLens[(i - 1 + n) % n];
-			const nextLen = edgeLens[(i + 1) % n];
-			const cpDist = Math.min(segDist, prevLen, nextLen) / 3;
-
-			const dir0 = tangentDirs[i];
-			const dir3 = tangentDirs[(i + 1) % n];
+			const m0 = tangents[i];
+			const m1 = tangents[(i + 1) % n];
 
 			const p1: Point = {
-				x: p0.x + dir0.x * cpDist,
-				y: p0.y + dir0.y * cpDist,
+				x: p0.x + m0.x / 3,
+				y: p0.y + m0.y / 3,
 			};
 			const p2: Point = {
-				x: p3.x - dir3.x * cpDist,
-				y: p3.y - dir3.y * cpDist,
+				x: p3.x - m1.x / 3,
+				y: p3.y - m1.y / 3,
 			};
 
 			const arcLength = this.computeArcLength(p0, p1, p2, p3);

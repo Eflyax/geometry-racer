@@ -12,6 +12,8 @@ interface PairingResult {
 	edges: Map<string, Array<PairingEdge>>;
 	worldWidth: number;
 	worldHeight: number;
+	safeWidth: number;
+	safeHeight: number;
 }
 
 const EDGE_COLORS = [
@@ -109,6 +111,99 @@ export class PairingManager {
 		const worldWidth = colOffsets[cols - 1] + colWidths[cols - 1];
 		const worldHeight = rowOffsets[rows - 1] + rowHeights[rows - 1];
 
-		return { grid, edges, worldWidth, worldHeight };
+		const { safeWidth, safeHeight } = this.computeSafeRect(
+			rawCells, cols, rows, colWidths, rowHeights, colOffsets, rowOffsets
+		);
+
+		return { grid, edges, worldWidth, worldHeight, safeWidth, safeHeight };
+	}
+
+	/**
+	 * Largest axis-aligned rectangle anchored at the world origin (0, 0) that is
+	 * fully covered by paired device screens. The track is generated inside this
+	 * rectangle so it can never land in a region no device displays — e.g. the
+	 * trailing empty cells of an incomplete last row (3, 5, 6, 7… players) or the
+	 * gaps left when devices in the same column/row have different pixel sizes.
+	 *
+	 * Coverage proof: the screens tile left-to-right / top-to-bottom from the
+	 * origin, with the only holes being (a) right/bottom slivers where a device is
+	 * smaller than its column/row slot and (b) trailing cells of the last row. For
+	 * a candidate rectangle [0,W]×[0,H] we require that every row whose band starts
+	 * before H covers x contiguously up to W, and every column whose band starts
+	 * before W covers y contiguously up to H. Those two conditions guarantee every
+	 * point of the rectangle lies inside some device. We pick the covered candidate
+	 * of maximum area.
+	 */
+	private static computeSafeRect(
+		rawCells: Array<{ playerId: string; col: number; row: number; sw: number; sh: number }>,
+		cols: number,
+		rows: number,
+		colWidths: Array<number>,
+		rowHeights: Array<number>,
+		colOffsets: Array<number>,
+		rowOffsets: Array<number>
+	): { safeWidth: number; safeHeight: number } {
+		const cellAt = (col: number, row: number): { sw: number; sh: number } | undefined =>
+			rawCells.find((c) => c.col === col && c.row === row);
+
+		// Contiguous covered width of a row, scanning columns from x=0 and stopping
+		// at the first hole (missing cell or a device narrower than its column).
+		const rowRightExtent = (row: number): number => {
+			let x = 0;
+			for (let col = 0; col < cols; col++) {
+				const cell = cellAt(col, row);
+				if (!cell) break;
+				x = colOffsets[col] + cell.sw;
+				if (cell.sw < colWidths[col]) break;
+			}
+			return x;
+		};
+
+		// Contiguous covered height of a column, scanning rows from y=0.
+		const colBottomExtent = (col: number): number => {
+			let y = 0;
+			for (let row = 0; row < rows; row++) {
+				const cell = cellAt(col, row);
+				if (!cell) break;
+				y = rowOffsets[row] + cell.sh;
+				if (cell.sh < rowHeights[row]) break;
+			}
+			return y;
+		};
+
+		const rowRights: Array<number> = [];
+		for (let row = 0; row < rows; row++) {
+			rowRights.push(rowRightExtent(row));
+		}
+		const colBottoms: Array<number> = [];
+		for (let col = 0; col < cols; col++) {
+			colBottoms.push(colBottomExtent(col));
+		}
+
+		const wCandidates = Array.from(new Set(rowRights));
+		const hCandidates = Array.from(new Set(colBottoms));
+
+		let safeWidth = 0;
+		let safeHeight = 0;
+		let bestArea = 0;
+
+		for (const w of wCandidates) {
+			for (const h of hCandidates) {
+				let covered = true;
+				for (let row = 0; row < rows && covered; row++) {
+					if (rowOffsets[row] < h && rowRights[row] < w) covered = false;
+				}
+				for (let col = 0; col < cols && covered; col++) {
+					if (colOffsets[col] < w && colBottoms[col] < h) covered = false;
+				}
+				if (covered && w * h > bestArea) {
+					bestArea = w * h;
+					safeWidth = w;
+					safeHeight = h;
+				}
+			}
+		}
+
+		return { safeWidth, safeHeight };
 	}
 }

@@ -53,6 +53,9 @@ export interface CarState {
 	derailT: number;
 	finished: boolean;
 	finishTime: number | null;
+	// Seconds the car has been over its cornering grip limit; derails once this
+	// reaches DERAIL_GRACE_MS. Decays while within the limit.
+	overload: number;
 }
 
 export interface RoomConfig {

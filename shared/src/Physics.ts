@@ -1,4 +1,11 @@
 import type { BezierSegment, CarState, Point, RoomConfig, Track } from './types.js';
+import {
+	DERAIL_GRACE_MS,
+	DERAIL_GRIP,
+	DERAIL_MIN_SPEED_FRAC,
+	DERAIL_SAMPLES,
+	DERAIL_WINDOW_PX,
+} from './constants.js';
 
 export class Physics {
 	static updateCar(car: CarState, touching: boolean, dt: number, track: Track, config: RoomConfig): void {
@@ -11,6 +18,7 @@ export class Physics {
 				car.penaltyRemaining = 0;
 				car.t = car.derailT;
 				car.speed = 0;
+				car.overload = 0;
 			}
 			return;
 		}
@@ -22,28 +30,38 @@ export class Physics {
 		}
 
 		if (car.speed > 0) {
-			const deltaArc = car.speed * dt;
-			const deltaT = deltaArc / track.totalArcLength;
-			const prevT = car.t % 1;
+			const deltaT = (car.speed * dt) / track.totalArcLength;
 			car.t += deltaT;
 
-			// Sample curvature at 25% and 75% of the traversed arc to avoid
-			// landing exactly on Bezier segment junctions (where d2 is discontinuous).
-			const k1 = this.getCurvature((prevT + deltaT * 0.25) % 1, track);
-			const k2 = this.getCurvature((prevT + deltaT * 0.75) % 1, track);
-			// Cap at R=10px to prevent residual junction spikes from dominating.
-			const curvature = Math.min(Math.max(k1, k2), 0.1);
+			// Robust curvature: median |κ| over an arc-length window around the car.
+			// A cubic Bézier can spike to a near-cusp at a single point (segment
+			// junctions, tight control points); the median rejects those outliers so
+			// derailment tracks the genuine sustained bend, not sampling artifacts.
+			const curvature = this.sampledCurvature(car.t, track);
 
-			if (curvature > 0.001) {
-				// K=3600 → derailment threshold at v=600 (maxSpeed) for R=100px curve.
-				// maxSafeSpeed = coeff * sqrt(3600 / κ),  min safe radius = 100/coeff² px
-				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(3600 / curvature);
-				if (car.speed > maxSafeSpeed) {
+			// Grip gives out when cornering load v²·κ exceeds the budget, i.e. when
+			// speed > coeff·sqrt(GRIP/κ). Below a crawl there is no meaningful load,
+			// so the car can always be nursed through any corner slowly.
+			const minDerailSpeed = config.maxSpeed * DERAIL_MIN_SPEED_FRAC;
+			let overloaded = false;
+			if (car.speed > minDerailSpeed && curvature > 1e-4) {
+				const maxSafeSpeed = config.derailmentCoefficient * Math.sqrt(DERAIL_GRIP / curvature);
+				overloaded = car.speed > maxSafeSpeed;
+			}
+
+			// Only a sustained overload derails; a single-frame spike is forgiven and
+			// the overload decays faster than it builds once the car is back in limit.
+			if (overloaded) {
+				car.overload += dt;
+				if (car.overload >= DERAIL_GRACE_MS / 1000) {
 					car.derailed = true;
 					car.derailT = car.t;
 					car.penaltyRemaining = config.penaltyDuration;
+					car.overload = 0;
 					return;
 				}
+			} else {
+				car.overload = Math.max(0, car.overload - dt * 2);
 			}
 		}
 
@@ -54,6 +72,26 @@ export class Physics {
 			car.finishTime = Date.now();
 			car.speed = 0;
 		}
+	}
+
+	// Median |curvature| sampled over an arc-length window centered on globalT.
+	// Using the median (an odd sample count) discards the isolated near-cusp
+	// spikes a cubic Bézier produces at segment junctions, so the value reflects
+	// the sustained bend the car actually experiences.
+	static sampledCurvature(globalT: number, track: Track): number {
+		const total = track.totalArcLength;
+		if (total <= 0) return 0;
+
+		const half = DERAIL_WINDOW_PX / 2;
+		const values: Array<number> = [];
+		for (let i = 0; i < DERAIL_SAMPLES; i++) {
+			const offset = -half + (DERAIL_WINDOW_PX * i) / (DERAIL_SAMPLES - 1);
+			const t = (((globalT + offset / total) % 1) + 1) % 1;
+			values.push(this.getCurvature(t, track));
+		}
+
+		values.sort((a, b) => a - b);
+		return values[values.length >> 1];
 	}
 
 	static getCurvature(globalT: number, track: Track): number {
